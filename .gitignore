@@ -1,0 +1,19 @@
+# Build outputs
+/app.exe
+*.o
+*.obj
+/build/
+/cmake-build-*/
+
+# Temporary files and logs
+*.log
+imgui.ini
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Exclude reference directory at project root
+/reference/
+*.webp
+*.md

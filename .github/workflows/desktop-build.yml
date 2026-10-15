@@ -1,0 +1,108 @@
+name: Windows and Linux Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'CMakeLists.txt'
+      - 'Makefile'
+      - '**/*.cpp'
+      - '**/*.hpp'
+      - '**/*.h'
+      - '**/*.cmake'
+      - 'resources/**'
+      - 'glfw/**'
+      - 'lib/**'
+      - '.github/workflows/desktop-build.yml'
+
+jobs:
+  windows:
+    name: Windows Build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Configure Release
+        run: |
+          cmake -S . -B build-windows -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Release
+        run: |
+          cmake --build build-windows --parallel
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExedraSim-Windows-Build
+          path: build-windows/ExedraSim.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux Build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libwebp-dev \
+            libgl1-mesa-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev
+
+      - name: Build GLFW 3.4
+        run: |
+          git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git glfw-src
+          cmake -S glfw-src -B glfw-build -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOME/.local" \
+            -DGLFW_BUILD_EXAMPLES=OFF \
+            -DGLFW_BUILD_TESTS=OFF \
+            -DGLFW_BUILD_DOCS=OFF \
+            -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build glfw-build --parallel
+          cmake --install glfw-build
+
+      - name: Configure Linux Build
+        run: |
+          cmake -S . -B build-linux \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$HOME/.local"
+
+      - name: Build Linux
+        run: |
+          cmake --build build-linux --parallel
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExedraSim-Linux-Build
+          path: |
+            build-linux/ExedraSim
+            build-linux/resources/
+          if-no-files-found: error

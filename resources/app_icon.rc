@@ -1,0 +1,2 @@
+// GLFW uses this named icon resource for the window icon on Windows.
+GLFW_ICON ICON "images/icon.ico"

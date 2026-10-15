@@ -1,0 +1,62 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'CMakeLists.txt'
+      - '**/*.cpp'
+      - '**/*.hpp'
+      - '**/*.h'
+      - '**/*.cmake'
+      - 'resources/meiryo.ttc'
+      - 'resources/meiryob.ttc'
+      - '.github/workflows/macos-build.yml'
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install cmake glfw webp pkg-config
+
+      - name: Verify bundled Japanese font
+        run: |
+          test -f "resources/meiryo.ttc"
+          test -f "resources/meiryob.ttc"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-macos \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build-macos --parallel
+
+      - name: Bundle dynamic libraries
+        run: |
+          cmake \
+            -DAPP_BUNDLE="$PWD/build-macos/ExedraSim.app" \
+            -DWEBP_PREFIX="$(brew --prefix webp)" \
+            -DGLFW_PREFIX="$(brew --prefix glfw)" \
+            -P .github/scripts/bundle-macos.cmake
+
+      - name: Prepare app bundle
+        run: |
+          mkdir -p artifact
+          ditto build-macos/ExedraSim.app artifact/ExedraSim.app
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExedraSim-macOS-build
+          path: artifact/
+          if-no-files-found: error
