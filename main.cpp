@@ -100,6 +100,14 @@ int main()
 		GLFW_RESIZABLE,
 		GLFW_FALSE
 	);
+	
+	// macOS用設定。 OpenGLを3.2 Coreに固定 (default: 2.1)
+	#if defined(__APPLE__)
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+	#endif
 
 
 	GLFWwindow* window =
@@ -144,7 +152,7 @@ int main()
 	// 日本語フォント
 	// =========================================================
 
-	// 全 OS で同梱フォントを使用する。実行時の作業ディレクトリには依存しない。
+	// 全 OS で同梱フォントを使用(windowsのみ標準のフォントを検索して表示)
 	const std::filesystem::path regular_font_path = GetJapaneseFontPath("meiryo.ttc");
 	const std::string regular_font_path_string = regular_font_path.string();
 
@@ -180,10 +188,13 @@ int main()
 		window,
 		true
 	);
-
-	ImGui_ImplOpenGL3_Init(
-		"#version 130"
-	);
+	
+	// macOS用設定: GLSL 1.3 -> 1.5 (OpenGL 3.2 CoreはGLSL 1.3を受け付けないらしい)
+	#if defined(__APPLE__)
+		ImGui_ImplOpenGL3_Init("#version 150");
+	#else
+		ImGui_ImplOpenGL3_Init("#version 130");
+	#endif
 
 
 	// =========================================================
