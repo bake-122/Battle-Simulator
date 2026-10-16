@@ -107,9 +107,10 @@
 線形補間の計算式は以下のとおりである。
 
 $$
-S(L)=S_0+\operatorname{trunc}\left(
+S(L)=S_0+
+\left\lfloor
 \frac{(S_1-S_0)(L-L_0)}{L_1-L_0}
-\right)
+\right\rfloor
 $$
 
 各記号の意味は以下のとおりである。
@@ -122,7 +123,6 @@ $$
 | `L_1` | 対象レベルを含む区間の上側の基準レベル |
 | `S_0` | 基準レベル `L_0` におけるステータス値 |
 | `S_1` | 基準レベル `L_1` におけるステータス値 |
-| `trunc` | 小数部分を切り捨て、整数に変換する処理 |
 
 つまり、下側の基準レベルから対象レベルまでの進行割合に応じて、両端のステータス値の差分を加算する。補間計算は整数演算で行い、端数を切り捨てる。
 
@@ -161,9 +161,9 @@ $$
 
 **[現行実装]**
 
-\[
+$$
 InitAV=\frac{10000}{SPD}
-\]
+$$
 
 Actor決定の原則として、AVの小さいキオクが先に行動する。SPDは正の値を前提としており、SPD減少によるゼロ除算は考慮されていない (Reference: [まきねね(@makinene071)氏によるXでの投稿](https://x.com/makinene071/status/2012910681868186039))
 
@@ -244,21 +244,21 @@ Actor の AV を `10000.0f / SPD` に戻し、*AV→TP でソートし*、最小
 
 `EffectList.cpp` の `DealDMG` は次を計算する。
 
-\[
+$$
 BaseDMG=BaseATK\times\frac{(BaseATK/124)^{1.2}+12}{20}
-\]
+$$
 
-\[
+$$
 AttackRatio=\min\left(\frac{TotalATK+10}{TotalDEF+10}\times0.12,\ 2.0\right)
-\]
+$$
 
-\[
+$$
 RawDamage=\frac{DamagePermille}{1000}\times BaseDMG\times AttackRatio
-\]
+$$
 
-\[
+$$
 Damage=\max(1,\lceil RawDamage\rceil),\quad HP'=\max(0,HP-Damage)
-\]
+$$
 
 dmgはパーミル表記である。例えば180%のダメージはdmg=1800と表される。計算は float / `std::pow`、端数は切り上げ、ダメージ最低値は 1、HP最低値は 0。
 
