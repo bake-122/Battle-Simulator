@@ -1838,7 +1838,7 @@ void FormationView::DrawUnitSelector()
 		// 必殺レベル上限
 		// ---------------------------------------------------
 
-		const int special_level_max =
+		const int max_special_level =
 			GetSpecialLevelMax(
 				params.ascension
 			);
@@ -1854,7 +1854,7 @@ void FormationView::DrawUnitSelector()
 			std::clamp(
 				params.specialLvl,
 				1,
-				special_level_max
+				max_special_level
 			);
 
 
@@ -1870,7 +1870,7 @@ void FormationView::DrawUnitSelector()
 		// 魔力解放レベル上限
 		// ---------------------------------------------------
 
-		const int magic_level_max =
+		const int max_magic_level =
 			GetMagicLevelMax(
 				params.level
 			);
@@ -1886,7 +1886,7 @@ void FormationView::DrawUnitSelector()
 			std::clamp(
 				params.magicLevel,
 				0,
-				magic_level_max
+				max_magic_level
 			);
 
 
@@ -1961,7 +1961,7 @@ void FormationView::DrawUnitSelector()
 			parameter_input.buffers[3],
 			params.magicLevel,
 			0,
-			magic_level_max
+			max_magic_level
 		);
 
 
@@ -1977,7 +1977,7 @@ void FormationView::DrawUnitSelector()
 			parameter_input.buffers[4],
 			params.specialLvl,
 			1,
-			special_level_max
+			max_special_level
 		);
 
 
