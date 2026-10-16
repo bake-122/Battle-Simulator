@@ -1,3 +1,8 @@
+/**
+ * @file formationView.h
+ * @brief 編成画面（FormationView）のUI・パラメータ設定・スロット管理
+ */
+
 #ifndef FORMATION_VIEW_H
 #define FORMATION_VIEW_H
 
@@ -11,18 +16,22 @@
 
 
 // -----------------------------------------------------------
-// パーティーの陣営
+/**
+ * @brief パーティーの陣営（味方 / 敵）
+ */
 // -----------------------------------------------------------
 
 enum class PartySide
 {
-    Ally,   // 味方 (画面左側)
-    Enemy   // 敵   (画面右側)
+    Ally,   /**< 味方 (画面左側) */
+    Enemy   /**< 敵   (画面右側) */
 };
 
 
 // -----------------------------------------------------------
-// FormationView
+/**
+ * @brief 編成画面のUI描画およびキオク編成状態を管理するクラス
+ */
 // -----------------------------------------------------------
 
 class FormationView
@@ -31,13 +40,16 @@ public:
 
     FormationView();
 
-    // 初期化
+    /** @brief 初期化処理。有効なキオクデータ一覧の抽出等を行う */
     void Initialize();
 
-    // 状態更新
+    /** @brief 状態更新処理 */
     void Update();
 
-    // 描画
+    /**
+     * @brief 編成画面の描画処理
+     * @return 次に遷移すべきシーン種別（Formation または Simulation）
+     */
     SceneType Draw();
 
 private:
@@ -46,31 +58,40 @@ private:
     // ユニット関連
     // -------------------------------------------------------
 
+    /** @brief 1陣営あたりのスロット数 */
     static constexpr int SLOT_COUNT = 5;
+    /** @brief 最大キオクレベル */
     static constexpr int MAX_LEVEL  = 160;
 
+    /**
+     * @brief キオクの育成パラメータ設定
+     */
     struct UnitParameters
     {
-        int ascension  = 5;  // 限界突破
-        int level      = MAX_LEVEL;  // レベル
-        int heartphial = 50;  // こころの器
-        int magicLevel = 140;  // 魔力解放
-        int specialLvl = 10;  // 必殺レベル
+        int ascension  = 5;          /**< 限界突破数 (0-5) */
+        int level      = MAX_LEVEL;  /**< レベル (1-160) */
+        int heartphial = 50;         /**< こころの器レベル (1-50) */
+        int magicLevel = 140;        /**< 魔力解放レベル (1-140) */
+        int specialLvl = 10;         /**< 必殺技レベル (1-10) */
     };
 	
+    /**
+     * @brief レベルごとの加算ステータス補正値
+     */
 	struct BonusStats
 	{
-		int level;
-		Stats bonus;
+		int level;    /**< 到達レベル */
+		Stats bonus;  /**< 加算ステータス */
 	};
 	
-	/* [注意]
+	/**
+	 * @note [注意]
 	 * 以下4つのBonusStatsは2つの関数CalcMagicLevelBonus, CalcHeartphialBonusのために
 	 * 用意された配列であるが、これら関数は対応する魔力解放/こころの器Lvの配列を参照し、
 	 * 補正値が「昇順に」累積するように処理されている。そのため、levelメンバが昇順に整列されていることが
 	 * 前提であり、これが崩れたとき関数も正常に作動しなくなる。
 	 */
-	// 星3, 4用魔力解放用
+	/** @brief 星3, 4キオク用の魔力解放ステータスボーナス配列 */
 	static constexpr BonusStats MAGICLEVEL_STATS_LOW[] =
 	{
 		{ 1, { 90, 0, 0 } },
@@ -172,7 +193,7 @@ private:
 		{ 140, { 0, 0, 56 } },
 	};
 	
-	// 星5用魔力解放
+	/** @brief 星5キオク用の魔力解放ステータスボーナス配列 */
 	static constexpr BonusStats MAGICLEVEL_STATS_HIGH[] =
 	{
 		{ 1, { 100, 0, 0 } },
@@ -274,8 +295,10 @@ private:
 		{ 140, { 0, 0, 60 } },
 	};
 
-	// 星3のみ実装されているキオク(夏希, かこ, 美雨, このは)のこころの器用
-	// NOTE: キオクポートレイトが存在しないため。
+	/**
+	 * @brief 星3のみ実装されているキオク(夏希, かこ, 美雨, このは)のこころの器用ボーナス配列
+	 * @note キオクポートレイトが存在しないため。
+	 */
 	static constexpr BonusStats HEARTPHIAL_STATS_LOW[] =
 	{
 		{ 4, { 30, 0, 0 } },
@@ -308,7 +331,7 @@ private:
 		{ 49, { 40, 0, 0 } },
 	};
 	
-	// 星4, 5のこころの器用
+	/** @brief 星4, 5キオク用のこころの器ステータスボーナス配列 */
 	static constexpr BonusStats HEARTPHIAL_STATS_HIGH[] =
 	{
 		{ 6, { 30, 0, 0 } },
@@ -336,6 +359,9 @@ private:
 	};
 
 	
+	/**
+	 * @brief パラメータ入力UIのバッファ・状態保持構造体
+	 */
 	struct ParameterInputState
 	{
 		std::array<std::array<char, 16>, 5> buffers{};
@@ -349,6 +375,13 @@ private:
 
 	ParameterInputState parameter_input;
 
+	/**
+	 * @brief パラメータ入力欄の文字列バッファを初期化する
+	 * @param side 陣営
+	 * @param slot_index スロット番号
+	 * @param data_index キオク配列インデックス
+	 * @param params 現在のパラメータ
+	 */
 	void InitializeParameterInput(
 		PartySide side,
 		int slot_index,
@@ -356,11 +389,33 @@ private:
 		const UnitParameters& params
 	);
 	
+	/**
+	 * @brief 魔力解放による加算ステータスを計算する
+	 * @param params 育成パラメータ
+	 * @param unit 対象キオク
+	 * @return 加算ステータス
+	 */
 	Stats CalcMagicLevelStats(const UnitParameters& params, const Character& unit) const;
+
+	/**
+	 * @brief こころの器による加算ステータスを計算する
+	 * @param params 育成パラメータ
+	 * @param unit 対象キオク
+	 * @return 加算ステータス
+	 */
 	Stats CalcHeartphialStats(const UnitParameters& params, const Character& unit) const;
+
+	/**
+	 * @brief 基礎ステータス、限界突破、魔力解放、こころの器を合算した最終ステータスを計算する
+	 * @param params 育成パラメータ
+	 * @param unit 対象キオク
+	 * @return 合計ステータス
+	 */
 	Stats CalcStats(const UnitParameters& params, const Character& unit) const;
 
-    // 1パーティー分のスロット
+    /**
+     * @brief 1陣営（5スロット分）のスロット状態とパラメータ
+     */
     struct PartySlots
     {
         PartySlots()
@@ -368,40 +423,63 @@ private:
             unit_indices.fill(-1);
         }
 
-        // Kioku_data の添字。-1 = ユニット未選択
-        std::array<int, SLOT_COUNT> unit_indices;
-
-        std::array<UnitParameters, SLOT_COUNT> parameters;
+        std::array<int, SLOT_COUNT> unit_indices;          /**< Kioku_data の添字（-1 = ユニット未選択） */
+        std::array<UnitParameters, SLOT_COUNT> parameters; /**< 各スロットのパラメータ */
     };
 
-    PartySlots ally_slots;
-    PartySlots enemy_slots;
+    PartySlots ally_slots;  /**< 味方陣営のスロット状態 */
+    PartySlots enemy_slots; /**< 敵陣営のスロット状態 */
 
-    // 現在どの陣営・どのスロットから選択Windowを開いたか
-    PartySide selector_side       = PartySide::Ally;
-    int       selector_slot_index = -1;
+    PartySide selector_side       = PartySide::Ally; /**< キオク選択Windowを開いた陣営 */
+    int       selector_slot_index = -1;               /**< キオク選択Windowを開いたスロット */
 
-    // 選択Window表示中は、全スロットの操作が無効になる
-    bool show_unit_selector = false;
+    bool show_unit_selector = false; /**< 選択Window表示中フラグ（表示中は全スロット操作無効） */
 
-    // Kioku_dataの有効なユニット一覧
-    std::vector<int> valid_unit_indices;
+    std::vector<int> valid_unit_indices; /**< Kioku_dataの有効なキオク一覧インデックス */
 
     // -------------------------------------------------------
     // 内部処理
     // -------------------------------------------------------
 
+    /**
+     * @brief 指定陣営のスロット状態への参照を取得する
+     * @param side 陣営
+     * @return PartySlots参照
+     */
     PartySlots& GetSlots(PartySide side);
 
-    // 同一判定は side のパーティー内でのみ行う
+    /**
+     * @brief スロットにキオクを割り当てる（同陣営内の重複はスワップ）
+     * @param side 陣営
+     * @param slot_index スロット番号
+     * @param data_index キオク配列インデックス
+     */
     void AssignUnitToSlot(PartySide side, int slot_index, int data_index);
 	
+	/**
+	 * @brief 指定スロットからキオクを解除して空にする
+	 * @param side 陣営
+	 * @param slot_index スロット番号
+	 */
 	void ClearUnitFromSlot(PartySide side, int slot_index);
 
+    /**
+     * @brief 限界突破数に応じた必殺技最大レベルを取得する
+     * @param ascension 限界突破数
+     * @return 最大必殺技レベル
+     */
     int GetSpecialLevelMax(int ascension) const;
+
+	/**
+	 * @brief レベルに応じた魔力解放最大レベルを取得する
+	 * @param level キオクレベル
+	 * @return 最大魔力解放レベル
+	 */
 	int GetMagicLevelMax(int level) const;
 
+    /** @brief 属性の文字列表現を取得する */
     const char* ElementToString(Element elem) const;
+    /** @brief ロールの文字列表現を取得する */
     const char* RoleToString(Role role) const;
 
 
@@ -409,14 +487,19 @@ private:
     // 描画
     // -------------------------------------------------------
 
+    /** @brief 指定陣営のユニットスロット一覧を描画する */
     void DrawUnitSlots(PartySide side);
 
+    /** @brief 指定陣営のパラメータ編集情報パネルを描画する */
     void DrawUnitInformation(PartySide side);
 
+    /** @brief ホバー時のユニットツールチップを描画する */
     void DrawUnitTooltip(const Character& ch) const;
 
+    /** @brief キオク選択モーダルウィンドウを描画する */
     void DrawUnitSelector();
 
+    /** @brief スロット群の背景パネルを描画する */
     void DrawUnitSlotBackground(PartySide side);
 };
 

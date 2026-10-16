@@ -1,3 +1,8 @@
+/**
+ * @file EffectList.cpp
+ * @brief 戦闘中のEffect実装、引数展開、対象解決およびディスパッチ処理。
+ */
+
 #include "EffectList.hpp"
 
 #include <algorithm>
@@ -5,23 +10,36 @@
 #include <cstddef>
 #include <initializer_list>
 #include <cmath>
-
 #include <iostream>
 
 namespace
 {
+    /**
+     * @brief 基礎攻撃力から基礎ダメージ量を算出します。
+     * @param baseAtk 基礎攻撃力。
+     * @return 算出された基礎ダメージ量（float）。
+     */
     float getBaseDMG(int baseAtk)
     {
         return static_cast<float>(baseAtk) * ((std::pow(static_cast<float>(baseAtk) / 124.0f, 1.2f) + 12.0f) / 20.0f);
     }
 
+    /**
+     * @brief 総攻撃力と総防御力から攻撃倍率（AttackRatio）を算出します。
+     * @param totalAtk 総攻撃力。
+     * @param totalDef 総防御力。
+     * @return 算出された攻撃倍率（float、最大2.0にクランプ）。
+     */
     float getAttackRatio(float totalAtk, float totalDef)
     {
         return std::min(((totalAtk + 10.0f) / (totalDef + 10.0f)) * 0.12f, 2.0f);
     }
 }
 
-// HPを減算する。dmgは1/1000
+/**
+ * @brief HP減算（DealDMG）を実行します。
+ * @details ダメージ計算式に基づいてダメージ量を算出し、対象HPを減算します。
+ */
 void DealDMG(Element element, TargetRange range, int dmg, int bgd,
              int proximity_dmg, int proximity_bgd,
              int targetTeam, int targetSlot, int* targetHP,
@@ -40,14 +58,16 @@ void DealDMG(Element element, TargetRange range, int dmg, int bgd,
         const float rawDamage = (static_cast<float>(dmg) / 1000.0f) * getBaseDMG(actorBaseAtk) * getAttackRatio(actorTotalAtk, targetTotalDef);
         const int damage = std::max(1, static_cast<int>(std::ceil(rawDamage)));
         *targetHP = std::max(0, *targetHP - damage);
-		// Debug Info
-		std::cout << "[Damage] " << (targetTeam == 1 ? "Ally" : "Enemy")
+        // Debug Info
+        std::cout << "[Damage] " << (targetTeam == 1 ? "Ally" : "Enemy")
               << "[" << targetSlot + 1 << "] takes " << damage
               << " damage (Remaining HP: " << *targetHP << ")" << std::endl;
     }
-
 }
 
+/**
+ * @brief DealDMGのInvoker関数。EffectContextから引数を解決してDealDMGを呼び出します。
+ */
 void InvokeDealDMG(const EffectContext& context, const void* arguments)
 {
     if (arguments == nullptr)
@@ -98,6 +118,9 @@ namespace exedra_effect_detail
                   "EffectType and Effect registry must have the same size");
 }
 
+/**
+ * @brief EffectTypeに対応する定義情報を取得します。
+ */
 const EffectDefinition* GetEffectDefinition(EffectType type)
 {
     const std::size_t index = static_cast<std::size_t>(type);
@@ -113,6 +136,13 @@ namespace
 {
     constexpr int SLOT_COUNT = 5;
 
+    /**
+     * @brief 指定したスロットが占有されているか判定します。
+     * @param context Effect実行コンテキスト。
+     * @param team チーム番号（0 = enemy, 1 = ally）。
+     * @param slot スロット番号。
+     * @return 占有されていればtrue。
+     */
     bool IsSlotOccupied(const EffectContext& context, int team, int slot)
     {
         if (slot < 0 || slot >= SLOT_COUNT)
@@ -128,6 +158,15 @@ namespace
         return occupied == nullptr || occupied[slot];
     }
 
+    /**
+     * @brief 指定したターゲットに対してEffectを呼び出します。
+     * @param definition Effect定義。
+     * @param effect Effect呼び出し情報。
+     * @param baseContext ベースコンテキスト。
+     * @param targetTeam 対象チーム番号。
+     * @param targetSlot 対象スロット番号。
+     * @param isProximityTarget 隣接対象フラグ。
+     */
     void InvokeForTarget(const EffectDefinition& definition,
                          const EffectCall& effect,
                          const EffectContext& baseContext,
@@ -153,6 +192,9 @@ namespace
     }
 }
 
+/**
+ * @brief 1つのEffectCallを実行・ディスパッチします。
+ */
 void ExecuteEffect(const EffectCall& effect, const EffectContext& context)
 {
     const EffectDefinition* definition = GetEffectDefinition(effect.type);

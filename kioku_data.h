@@ -1,9 +1,17 @@
+/**
+ * @file kioku_data.h
+ * @brief 全キオク（キャラクター）の静的マスターデータ定義
+ */
+
 #ifndef KIOKU_DATA
 #define KIOKU_DATA
 #include <array>
 #include <algorithm>
 #include "unit_types.h"
 
+/**
+ * @brief 全キオクの静的マスターデータ配列
+ */
 inline constexpr std::array<Character, 128> Kioku_data = {
 	{
 		{
@@ -1849,13 +1857,19 @@ inline constexpr std::array<Character, 128> Kioku_data = {
 	}
 };
 
-/* MPではなくBPを用いて必殺技を打つキオク一覧。
- * Arg1: キオクのID
- * Arg2: 必殺技に必要なBP
+/**
+ * @brief MPではなくBPを用いて必殺技を打つキオク一覧。
+ * - first: キオクのID
+ * - second: 必殺技に必要なBP
  */
 inline constexpr std::array<std::pair<int, int>, 2> BP_Kioku_List = {{ { 1005, 12 }, { 2008, 15 } }};
 
 
+/**
+ * @brief 指定されたキオクIDからCharacterマスターデータを検索する
+ * @param id キオクID
+ * @return 見つかった場合はCharacterポインタ、存在しない場合はnullptr
+ */
 inline const Character* FindCharacterById(int id) {
     auto it = std::find_if(Kioku_data.begin(), Kioku_data.end(),
                           [id](const auto& ch) { return ch.id == id; });

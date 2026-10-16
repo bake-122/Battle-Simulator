@@ -1,3 +1,8 @@
+/**
+ * @file simulationView.cpp
+ * @brief 戦闘シミュレーション画面のUI描画・入力処理の実装。
+ */
+
 #include "simulationView.hpp"
 #include "../imgui/imgui.h"
 #include "../image_loader.hpp"
@@ -16,20 +21,26 @@
 // レイアウト
 // ===========================================================
 
+/** @brief 左右分割線の既定X座標。 */
 constexpr float DEFAULT_SPLIT_X = 840.0f;
+/** @brief 上下分割線の既定Y座標。 */
 constexpr float DEFAULT_SPLIT_Y = 500.0f;
 
+/** @brief 分割線移動時の最小領域サイズ。 */
 constexpr float MIN_DOMAIN = 64.0f;
+/** @brief 左右分割線の最大X座標。 */
 constexpr float MAX_DOMAIN_X =
     static_cast<float>(WINDOW_WIDTH) - MIN_DOMAIN;
+/** @brief 上下分割線の最大Y座標。 */
 constexpr float MAX_DOMAIN_Y =
     static_cast<float>(WINDOW_HEIGHT) - MIN_DOMAIN;
 
-// domain3, 4 の横幅
+/** @brief domain3（アクションパネル）の横幅。 */
 constexpr float DOMAIN3_WIDTH = 1080.0f;
+/** @brief domain4（Back to Formationボタン等）の横幅。 */
 constexpr float DOMAIN4_WIDTH = static_cast<float>(WINDOW_WIDTH) - DOMAIN3_WIDTH;
 
-// 境界線の太さ
+/** @brief 分割境界線の太さ。 */
 constexpr float SPLITTER_SIZE = 4.0f;
 
 
@@ -95,6 +106,9 @@ static bool dragging_horizontal = false;
 static float g_actionLogScrollY = 0.0f;
 static int g_lastAutoScrollHistoryIndex = -1;
 
+/**
+ * @brief UI側の初期化ラッパー関数。
+ */
 void SetSimulationTeamState(const TeamState& state)
 {
     SetSimulationTeamStateLogic(state);
@@ -107,6 +121,9 @@ void SetSimulationTeamState(const TeamState& state)
 // Simulation Scene
 // ===========================================================
 
+/**
+ * @brief 戦闘シミュレーション画面を描画し、フレーム更新を行います。
+ */
 SceneType RenderSimulationScene()
 {
     SceneType next_scene = SceneType::Simulation;

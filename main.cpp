@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief アプリケーションのエントリーポイント、ウィンドウ管理、メインループ
+ */
+
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
@@ -21,10 +26,15 @@
 #include <unistd.h>
 #endif
 
-// 太字フォント（simulationView.hpp で extern 宣言）
+/**
+ * @brief 太字フォント（シミュレーション画面の見出し等で使用）
+ */
 ImFont* g_font_bold = nullptr;
 
-// fontファイルをwindows非依存にするため。
+/**
+ * @brief 実行ファイルの配置ディレクトリパスを取得する
+ * @return 実行ファイルの親ディレクトリパス
+ */
 static std::filesystem::path GetExecutableDirectory()
 {
 #if defined(__APPLE__)
@@ -53,6 +63,11 @@ static std::filesystem::path GetExecutableDirectory()
 #endif
 }
 
+/**
+ * @brief OSに応じた日本語フォントファイルの絶対パスを取得する
+ * @param filename フォントファイル名（meiryo.ttc等）
+ * @return フォントファイルのパス
+ */
 static std::filesystem::path GetJapaneseFontPath(const char* filename)
 {
 #if defined(__APPLE__)
@@ -64,7 +79,11 @@ static std::filesystem::path GetJapaneseFontPath(const char* filename)
 #endif
 }
 
-// ウィンドウタイトル変更関数
+/**
+ * @brief 現在のシーンに応じてウィンドウタイトルを更新する
+ * @param window GLFWウィンドウハンドル
+ * @param scene 現在のシーン種別
+ */
 void UpdateWindowTitle(GLFWwindow* window, SceneType scene)
 {
 	switch (scene)
@@ -86,6 +105,10 @@ void UpdateWindowTitle(GLFWwindow* window, SceneType scene)
 }
 
 
+/**
+ * @brief エントリーポイント
+ * @return 終了コード (0: 正常終了, -1: 異常終了)
+ */
 int main()
 {
 	// =========================================================

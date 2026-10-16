@@ -1,3 +1,8 @@
+/**
+ * @file formationView.cpp
+ * @brief 編成画面UIの実装およびキオク選択・パラメータ編集・ステータス計算処理。
+ */
+
 #include <algorithm>
 #include <charconv>
 #include <cstdint>
@@ -80,30 +85,35 @@ namespace
 	// 陣営ごとの値
 	// -------------------------------------------------------
 
+	/** @brief 陣営が味方（Ally）であるかを判定します。 */
 	bool IsAlly(PartySide side)
 	{
 		return side == PartySide::Ally;
 	}
 
-	// Window名の識別子用
+	/** @brief Window名識別用の陣営文字列タグ（"Ally" または "Enemy"）を取得します。 */
 	const char* SideTag(PartySide side)
 	{
 		return IsAlly(side) ? "Ally" : "Enemy";
 	}
 
+	/** @brief 陣営のパネル背景色を取得します。 */
 	ImU32 PanelColor(PartySide side)
 	{
 		return IsAlly(side) ? COLOR_ALLY_PANEL : COLOR_ENEMY_PANEL;
 	}
 
+	/** @brief 陣営のスロット行背景色を取得します。 */
 	ImU32 RowColor(PartySide side)
 	{
 		return IsAlly(side) ? COLOR_ALLY_ROW : COLOR_ENEMY_ROW;
 	}
 
-	// 背景パネルの左端X座標
-	//  Ally: 画面左端 + PANEL_MARGIN_X
-	//  Enemy: 画面右端からPANEL_MARGIN_X + PANEL_WIDTH分引いた位置
+	/**
+	 * @brief 背景パネルの左端X座標を計算します。
+	 * @param side 対象陣営。
+	 * @return 左端X座標。
+	 */
 	float PanelLeft(PartySide side)
 	{
 		const float panel_start = IsAlly(side)
@@ -113,13 +123,22 @@ namespace
 		return panel_start;
 	}
 
-	// スロットのX座標 (パネル左端からの相対位置は両陣営で共通)
+	/**
+	 * @brief スロットのX座標を計算します。
+	 * @param side 対象陣営。
+	 * @return スロットX座標。
+	 */
 	float SlotX(PartySide side)
 	{
 		return PanelLeft(side) + SLOT_OFFSET_IN_PANEL;
 	}
 
-	// slot_index 番目のスロット左上座標
+	/**
+	 * @brief 指定スロットの左上座標を取得します。
+	 * @param side 対象陣営。
+	 * @param slot_index スロットインデックス（0～4）。
+	 * @return スロットの左上座標。
+	 */
 	ImVec2 SlotPosition(PartySide side, int slot_index)
 	{
 		return ImVec2(
@@ -128,6 +147,12 @@ namespace
 		);
 	}
 	
+	/**
+	 * @brief スロット横のユニット情報描画開始座標を取得します。
+	 * @param side 対象陣営。
+	 * @param slot_index スロットインデックス（0～4）。
+	 * @return 情報Windowの左上座標。
+	 */
 	ImVec2 InfoPosition(PartySide side, int slot_index)
 	{
 		const ImVec2 slot_pos = SlotPosition(side, slot_index);
@@ -138,7 +163,12 @@ namespace
 		);
 	}
 
-	// ユニット情報Windowの左上座標 (スロットの右側)
+	/**
+	 * @brief キオク選択Windowの左上座標を計算します。
+	 * @param side 対象陣営。
+	 * @param slot_index スロットインデックス（0～4）。
+	 * @return 選択Windowの左上座標。
+	 */
 	ImVec2 SelectorPosition(PartySide side, int slot_index)
 	{
 		const ImVec2 slot_pos = SlotPosition(side, slot_index);
@@ -173,21 +203,22 @@ namespace
 		return ImVec2(x, y);
 	}
 
-	// -----------------------------------------------------------
-	// 整数入力用コールバック
-	//
-	// 範囲外になった場合は、
-	// DeleteChars / InsertChars を使用して
-	// ImGui内部の編集状態も正しく更新する。
-	// -----------------------------------------------------------
+	/**
+	 * @brief 整数入力用コールバックデータ構造体。
+	 */
 	struct IntegerInputCallbackData
 	{
-		int* value;
-		int min_value;
-		int max_value;
+		int* value;       /**< 入力対象の整数ポインタ */
+		int min_value;    /**< 最小許容値 */
+		int max_value;    /**< 最大許容値 */
 	};
 
-
+	/**
+	 * @brief ImGuiの整数InputText用コールバック関数。
+	 * @details 数字以外の入力をフィルタリングし、空文字処理や先行ゼロの削除、範囲clampを行います。
+	 * @param data ImGuiコールバックデータ。
+	 * @return 処理結果コード。
+	 */
 	int IntegerInputCallback(ImGuiInputTextCallbackData* data)
 	{
 		auto* callback_data =
@@ -340,9 +371,11 @@ namespace
 	}
 
 
-	// -----------------------------------------------------------
-	// バッファへ整数を書き込む
-	// -----------------------------------------------------------
+	/**
+	 * @brief 文字列バッファに整数値をフォーマットして書き込みます。
+	 * @param buffer 出力先固定長バッファ。
+	 * @param value 書き込む整数値。
+	 */
 	void SetIntegerBuffer(
 		std::array<char, 16>& buffer,
 		int value)
@@ -355,6 +388,14 @@ namespace
 		);
 	}
 
+	/**
+	 * @brief 整数パラメータ入力UI（[-] / 数値Input / [+]）を描画します。
+	 * @param label パラメータ名ラベル。
+	 * @param buffer 入力用テキストバッファ。
+	 * @param value 編集対象の整数参照。
+	 * @param min_value 最小許容値。
+	 * @param max_value 最大許容値。
+	 */
 	void DrawIntegerParameter(
 		const char* label,
 		std::array<char, 16>& buffer,
@@ -545,13 +586,22 @@ namespace
 	// ユーティリティ
 	// -------------------------------------------------------
 
-	// Kioku_data の添字として有効か
+	/**
+	 * @brief Kioku_dataの有効なインデックス範囲内であるかを判定します。
+	 * @param index 検査するインデックス。
+	 * @return 有効範囲内ならtrue。
+	 */
 	bool IsValidKiokuIndex(int index)
 	{
 		return index >= 0 &&
 			   index < static_cast<int>(std::size(Kioku_data));
 	}
 
+	/**
+	 * @brief キオクの表示名を取得します。
+	 * @param unit 対象キオクデータ。
+	 * @return 名前文字列（nullptrの場合は "Unknown"）。
+	 */
 	const char* UnitName(const Character& unit)
 	{
 		return unit.name ? unit.name : "Unknown";
@@ -561,7 +611,12 @@ namespace
 	// ホバー時のステータステーブル
 	// -------------------------------------------------------
 
-	// 1行分 (Lv / HP / ATK / DEF)
+	/**
+	 * @brief ホバーツールチップのステータステーブル1行分を描画します。
+	 * @tparam Stats ステータス構造体型。
+	 * @param label レベル表記ラベル。
+	 * @param stats ステータス値。
+	 */
 	template <typename Stats>
 	void DrawStatsRow(const char* label, const Stats& stats)
 	{
@@ -580,6 +635,10 @@ namespace
 		ImGui::Text("%d", stats.def);
 	}
 
+	/**
+	 * @brief ホバーツールチップの各レベル帯ステータステーブルを描画します。
+	 * @param ch 対象キオクデータ。
+	 */
 	void DrawStatsTable(const Character& ch)
 	{
 		constexpr ImGuiTableFlags flags =
@@ -608,6 +667,12 @@ namespace
 	// スロット円周
 	// -------------------------------------------------------
 
+	/**
+	 * @brief スロット外周の円を描画します。
+	 * @param draw_list 描画リスト。
+	 * @param center 円の中心座標。
+	 * @param highlighted ハイライト状態フラグ。
+	 */
 	void DrawSlotCircle(ImDrawList* draw_list,
 						const ImVec2& center,
 						bool highlighted)

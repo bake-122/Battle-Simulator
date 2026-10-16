@@ -1,3 +1,8 @@
+/**
+ * @file simulationLogic.cpp
+ * @brief 戦闘シミュレーションのロジック・タイムライン進行・履歴管理の実装。
+ */
+
 #include "simulationLogic.hpp"
 
 #include <algorithm>
@@ -14,6 +19,13 @@ namespace
     void HandleDamageApplied(void* context, int team, int slot,
                              bool* allySlotOccupied, bool* enemySlotOccupied);
 
+    /**
+     * @brief 対象キオクの現在HPポインタを解決します。
+     * @param context チーム状態へのポインタ（TeamState*）。
+     * @param team チーム番号（0 = enemy, 1 = ally）。
+     * @param slot スロット番号（0～4）。
+     * @return 対象HPへのポインタ。不正時はnullptr。
+     */
     int* ResolveTargetHP(void* context, int team, int slot)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
@@ -28,6 +40,13 @@ namespace
             : &state->enemy[slot].hp;
     }
 
+    /**
+     * @brief 対象キオクの総防御力を解決します。
+     * @param context チーム状態へのポインタ（TeamState*）。
+     * @param team チーム番号（0 = enemy, 1 = ally）。
+     * @param slot スロット番号（0～4）。
+     * @return 総防御力（float）。不正時は0.0f。
+     */
     float ResolveTargetDef(void* context, int team, int slot)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
@@ -46,15 +65,18 @@ namespace
 
 namespace
 {
+    /**
+     * @brief 履歴スナップショット構造体。
+     */
     struct HistorySnapshot
     {
-        TeamState teamState;
-        std::vector<TimelineNode> timeline;
-        int actorTeam = -1;
-        int actorSlot = -1;
-        int selectedTargetTeam = -1;
-        int selectedTargetSlot = -1;
-        float accumTime = 0.0f;
+        TeamState teamState;                       /**< チーム状態 */
+        std::vector<TimelineNode> timeline;        /**< タイムライン配列 */
+        int actorTeam = -1;                        /**< アクターのチーム */
+        int actorSlot = -1;                        /**< アクターのスロット */
+        int selectedTargetTeam = -1;               /**< 選択されたターゲットチーム */
+        int selectedTargetSlot = -1;               /**< 選択されたターゲットスロット */
+        float accumTime = 0.0f;                    /**< 累積時間 */
     };
 }
 
@@ -79,12 +101,14 @@ static float g_accumTime = 0.0f;
 // 履歴管理
 static std::vector<HistorySnapshot> g_historySequence;
 
-// 各行動で選択されたターゲット。
+/**
+ * @brief 各履歴ステップで実行された行動情報。
+ */
 struct HistoryAction
 {
-    SkillType skillType = SkillType::BA;
-    int targetTeam = -1;
-    int targetSlot = -1;
+    SkillType skillType = SkillType::BA; /**< スキル種別 */
+    int targetTeam = -1;                 /**< ターゲットチーム */
+    int targetSlot = -1;                 /**< ターゲットスロット */
 };
 
 static std::vector<HistoryAction> g_historyActions;
@@ -95,15 +119,25 @@ static int g_historyIndex = 0;
 
 namespace
 {
-    // 将来、キオクが付与した効果・受けている効果を管理する仕組みを追加した際の死亡時フック。
-    // 現時点では効果状態を保持していないため、削除処理は実装しない。
+    /**
+     * @brief 付与効果・被付与効果の解除処理（将来実装用のスタブ）。
+     * @param team チーム番号。
+     * @param slot スロット番号。
+     */
     void RemoveEffectsGivenOrReceived(int team, int slot)
     {
         (void)team;
         (void)slot;
     }
 
-    // DealDMG直後に死亡を確定し、Effect実行中の占有情報とTimelineへ即時反映する。
+    /**
+     * @brief DealDMG直後に死亡判定・占有更新・タイムライン更新を行うコールバック。
+     * @param context チーム状態ポインタ。
+     * @param team 対象チーム番号。
+     * @param slot 対象スロット番号。
+     * @param allySlotOccupied 味方スロット占有配列。
+     * @param enemySlotOccupied 敵スロット占有配列。
+     */
     void HandleDamageApplied(void* context, int team, int slot,
                              bool* allySlotOccupied, bool* enemySlotOccupied)
     {
@@ -163,13 +197,27 @@ namespace
     }
 }
 
+/**
+ * @brief ターンを1回分進行させ、スキル実行・AV更新・ログ記録を行います。
+ * @param skillType 実行するスキル種別。
+ * @param actorTeam アクターのチーム番号。
+ * @param actorSlot アクターのスロットインデックス。
+ * @param targetTeam ターゲットのチーム番号。
+ * @param targetSlot ターゲットのスロットインデックス。
+ */
 static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot);
 
+/**
+ * @brief 現在のチーム状態への参照を取得します。
+ */
 const TeamState& GetSimulationTeamState()
 {
     return g_teamState;
 }
 
+/**
+ * @brief ロジック側のチーム状態を設定・初期化します。
+ */
 void SetSimulationTeamStateLogic(const TeamState& state)
 {
     g_teamState = state;
@@ -201,22 +249,55 @@ void SetSimulationTeamStateLogic(const TeamState& state)
     InitTimeline();
 }
 
+/**
+ * @brief 現在のタイムラインを取得します。
+ */
 const std::vector<TimelineNode>& GetTimeline()
 {
     return g_timeline;
 }
 
+/**
+ * @brief アクションログ一覧を取得します。
+ */
 const std::vector<std::string>& GetActionLog()
 {
     return g_actionLog;
 }
 
+/**
+ * @brief 現在のアクターのチームを取得します。
+ */
 int GetActorTeam() { return g_actorTeam; }
+
+/**
+ * @brief 現在のアクターのスロットインデックスを取得します。
+ */
 int GetActorSlot() { return g_actorSlot; }
+
+/**
+ * @brief 戦闘開始からの累積時間を取得します。
+ */
 float GetAccumTime() { return g_accumTime; }
+
+/**
+ * @brief 現在の履歴インデックスを取得します。
+ */
 int GetHistoryIndex() { return g_historyIndex; }
+
+/**
+ * @brief 保存されている履歴総数を取得します。
+ */
 int GetHistoryCount() { return static_cast<int>(g_historySequence.size()); }
+
+/**
+ * @brief 現在選択されているスキル種別を取得します。
+ */
 SkillType GetCurrentSkillType() { return g_currentSkillType; }
+
+/**
+ * @brief 現在選択されているスキル種別を切り替えます（BA <-> BS）。
+ */
 void ToggleCurrentSkillType()
 {
     // SA は常時選択不可。BA と BS の間だけを切り替える。
@@ -225,8 +306,9 @@ void ToggleCurrentSkillType()
         : SkillType::BA;
 }
 
-
-// タイムラインソート (AV昇順 → TP昇順)
+/**
+ * @brief タイムラインをソートします（AV昇順 -> TP昇順）。
+ */
 static void SortTimeline()
 {
     std::sort(g_timeline.begin(), g_timeline.end(),
@@ -238,7 +320,9 @@ static void SortTimeline()
     );
 }
 
-// 現在の状態をスナップショットとして保存
+/**
+ * @brief 現在の状態をスナップショットとして履歴に保存します。
+ */
 static void CaptureSnapshot()
 {
     HistorySnapshot snap;
@@ -252,7 +336,9 @@ static void CaptureSnapshot()
     g_historySequence.push_back(std::move(snap));
 }
 
-// 指定された時点のシミュレーション状態を正確に復元する
+/**
+ * @brief 指定されたインデックスのシミュレーション状態を正確に復元します。
+ */
 void RestoreHistoryStep(int index)
 {
     if (index < 0 ||
@@ -282,7 +368,9 @@ void RestoreHistoryStep(int index)
     g_historyIndex = index;
 }
 
-
+/**
+ * @brief タイムラインの初期化および初期アクターの解決を行います。
+ */
 void InitTimeline()
 {
     g_timeline.clear();
@@ -351,8 +439,9 @@ void InitTimeline()
     CaptureSnapshot();
 }
 
-
-// 左キー：1つ前の状態に戻る
+/**
+ * @brief 履歴を1ステップ前に巻き戻します（Undo）。
+ */
 void BackupTurn()
 {
     if (g_historyIndex <= 0)
@@ -363,8 +452,9 @@ void BackupTurn()
     RestoreHistoryStep(g_historyIndex - 1);
 }
 
-
-// 右キー：保存されている次の状態に進む
+/**
+ * @brief 履歴を1ステップ進めます（Redo）。
+ */
 void ForwardTurn()
 {
     const int lastIndex =
@@ -378,8 +468,9 @@ void ForwardTurn()
     RestoreHistoryStep(g_historyIndex + 1);
 }
 
-// 現在のSkillTypeに応じて行動を実行する。
-// ターゲットを選択してターンを進行する。
+/**
+ * @brief スキル実行およびターゲット選択を伴い、履歴を記録・分岐してターンを進めます。
+ */
 void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
 {
     // 現段階で実行できるSkillTypeはBAとBS。
@@ -467,7 +558,9 @@ void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
         static_cast<int>(g_historySequence.size()) - 1;
 }
 
-
+/**
+ * @brief ターンを1回分進行させ、スキル実行・AV更新・ログ記録を行います。
+ */
 static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot)
 {
     if (g_timeline.empty()) return;

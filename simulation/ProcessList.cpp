@@ -1,3 +1,8 @@
+/**
+ * @file ProcessList.cpp
+ * @brief 戦闘中のProcess登録・検索および実行処理の実装。
+ */
+
 #include "ProcessList.hpp"
 
 #include <algorithm>
@@ -33,16 +38,25 @@ namespace exedra_process_detail
     };
 }
 
+/**
+ * @brief 登録済みのProcess定義リストを取得します。
+ */
 const std::vector<ProcessDefinition>& GetProcessList()
 {
     return exedra_process_detail::registry;
 }
 
+/**
+ * @brief 登録済みProcessの総数を取得します。
+ */
 std::size_t GetRegisteredProcessCount()
 {
     return exedra_process_detail::registry.size();
 }
 
+/**
+ * @brief 指定したProcessIdに対応する定義を取得します。
+ */
 const ProcessDefinition* GetProcessDefinition(ProcessId id)
 {
     if (id == 0)
@@ -60,6 +74,9 @@ const ProcessDefinition* GetProcessDefinition(ProcessId id)
     return it == registry.end() ? nullptr : &(*it);
 }
 
+/**
+ * @brief 指定したProcess定義を実行します。
+ */
 void ExecuteProcess(const ProcessDefinition& process, const EffectContext& context)
 {
     if (process.effects == nullptr)
@@ -73,6 +90,9 @@ void ExecuteProcess(const ProcessDefinition& process, const EffectContext& conte
     }
 }
 
+/**
+ * @brief 指定したProcessIdに対応するProcessを検索して実行します。
+ */
 bool ExecuteProcess(ProcessId id, const EffectContext& context)
 {
     const ProcessDefinition* process = GetProcessDefinition(id);

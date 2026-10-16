@@ -1,3 +1,8 @@
+/**
+ * @file image_loader.cpp
+ * @brief WebP画像のデコードとテクスチャ管理（ImageManager）の実装
+ */
+
 #include "image_loader.hpp"
 #include "webp/decode.h"
 
@@ -5,7 +10,9 @@
 #include "embedded_images/elements/all_element_images.h"
 #include "embedded_images/roles/all_role_images.h"
 
-// LoadWebPTextureFromMemory の実装
+/**
+ * @brief メモリ上のWebPバイナリからOpenGL 2Dテクスチャを生成する。
+ */
 GLuint LoadWebPTextureFromMemory(const unsigned char* buffer, size_t size, int* out_width, int* out_height) {
     if (!buffer || size == 0) return 0;
 
@@ -30,9 +37,12 @@ GLuint LoadWebPTextureFromMemory(const unsigned char* buffer, size_t size, int* 
     return image_texture;
 }
 
+/**
+ * @brief 埋め込み画像をすべてOpenGLテクスチャとして登録・初期化する
+ */
 void ImageManager::Init() {
 	
-	// アイコン画像の登録
+	/** @brief アイコン画像の登録ラムダ */
     auto RegisterImage = [this](int id, const unsigned char* data, size_t size) {
         int w, h;
         GLuint tex = LoadWebPTextureFromMemory(data, size, &w, &h);
@@ -43,7 +53,7 @@ void ImageManager::Init() {
     };
 #include "embedded_images/units/register_unit_images.h"
 
-	// 属性画像の登録
+	/** @brief 属性アイコン画像の登録ラムダ */
 	auto RegisterElementImage = [this](Element element, const unsigned char* data, size_t size) {
 		int w, h;
 		GLuint tex = LoadWebPTextureFromMemory(data, size, &w, &h);
@@ -53,7 +63,7 @@ void ImageManager::Init() {
 	};
 #include "embedded_images/elements/register_element_images.h"
 
-	// ロール画像の登録
+	/** @brief ロールアイコン画像の登録ラムダ */
 	auto RegisterRoleImage = [this](Role role, const unsigned char* data, size_t size) {
 		int w, h;
 		GLuint tex = LoadWebPTextureFromMemory(data, size, &w, &h);
@@ -64,7 +74,9 @@ void ImageManager::Init() {
 #include "embedded_images/roles/register_role_images.h"
 }
 
-// アイコンのgetter
+/**
+ * @brief キオク画像テクスチャの取得
+ */
 GLuint ImageManager::GetTexture(int id) const {
     auto it = texture_map_.find(id);
     if (it != texture_map_.end()) {
@@ -73,7 +85,9 @@ GLuint ImageManager::GetTexture(int id) const {
     return 0;
 }
 
-// 属性のgetter
+/**
+ * @brief 属性画像テクスチャの取得
+ */
 GLuint ImageManager::GetElementTexture(Element element) const {
 	const size_t index = static_cast<size_t>(element);
 	
@@ -83,7 +97,9 @@ GLuint ImageManager::GetElementTexture(Element element) const {
 	return element_texture_map_[index];
 }
 
-// ロールのgetter
+/**
+ * @brief ロール画像テクスチャの取得
+ */
 GLuint ImageManager::GetRoleTexture(Role role) const {
 	const size_t index = static_cast<size_t>(role);
 	
@@ -94,6 +110,9 @@ GLuint ImageManager::GetRoleTexture(Role role) const {
 }
 
 
+/**
+ * @brief 保持している全テクスチャの破棄とリソース解放
+ */
 void ImageManager::Cleanup() {
 	
 	// アイコン
