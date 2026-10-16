@@ -16,4 +16,4 @@ Thumbs.db
 # Exclude reference directory at project root
 /reference/
 *.webp
-*.md
+AGENTS.md
