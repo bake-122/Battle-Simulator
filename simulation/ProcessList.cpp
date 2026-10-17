@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace exedra_process_detail
+namespace simulation_process_detail
 {
     // すべてのスロットから共有するデバッグ用Process引数。
     // dmg / proximity_dmg はパーミル単位。コンソールには従来どおりパーセントで表示する。
@@ -43,7 +43,7 @@ namespace exedra_process_detail
  */
 const std::vector<ProcessDefinition>& GetProcessList()
 {
-    return exedra_process_detail::registry;
+    return simulation_process_detail::registry;
 }
 
 /**
@@ -51,7 +51,7 @@ const std::vector<ProcessDefinition>& GetProcessList()
  */
 std::size_t GetRegisteredProcessCount()
 {
-    return exedra_process_detail::registry.size();
+    return simulation_process_detail::registry.size();
 }
 
 /**
@@ -64,7 +64,7 @@ const ProcessDefinition* GetProcessDefinition(ProcessId id)
         return nullptr;
     }
 
-    const auto& registry = exedra_process_detail::registry;
+    const auto& registry = simulation_process_detail::registry;
     const auto it = std::find_if(registry.begin(), registry.end(),
         [id](const ProcessDefinition& process)
         {

@@ -1,9 +1,12 @@
-# Build outputs
+# Build options & outputs
 /app.exe
 *.o
 *.obj
 /build/
 /cmake-build-*/
+Makefile
+build-release.bat
+build.bat
 
 # Temporary files and logs
 *.log
