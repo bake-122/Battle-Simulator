@@ -20,11 +20,105 @@
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/types.h>
+#include <unistd.h>
 #elif defined(_WIN32)
 #include <windows.h>
 #elif defined(__linux__)
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
+
+/**
+ * @brief アプリケーションの二重起動を防止
+ *
+ * Windowsでは名前付きMutex、macOS/Linuxではflockを使用する。
+ * インスタンスが生存している間ロックを保持し、終了時に解放する。
+ */
+class SingleInstanceGuard
+{
+public:
+	SingleInstanceGuard() noexcept
+	{
+#if defined(_WIN32)
+		SetLastError(ERROR_SUCCESS);
+		handle_ = CreateMutexW(nullptr, FALSE, L"Local\\ExedraSim_SingleInstance");
+		if (handle_ == nullptr)
+		{
+			is_primary_ = false;
+			return;
+		}
+
+		if (GetLastError() == ERROR_ALREADY_EXISTS)
+		{
+			CloseHandle(handle_);
+			handle_ = nullptr;
+			is_primary_ = false;
+		}
+#elif defined(__APPLE__) || defined(__linux__)
+		try
+		{
+			const auto lock_path =
+				std::filesystem::temp_directory_path() /
+				("ExedraSim-" +
+				 std::to_string(static_cast<unsigned long long>(getuid())) +
+				 ".lock");
+
+			lock_fd_ = open(lock_path.c_str(), O_CREAT | O_RDWR, 0600);
+			if (lock_fd_ < 0 || flock(lock_fd_, LOCK_EX | LOCK_NB) != 0)
+			{
+				if (lock_fd_ >= 0)
+					close(lock_fd_);
+				lock_fd_ = -1;
+				is_primary_ = false;
+			}
+		}
+		catch (...)
+		{
+			if (lock_fd_ >= 0)
+				close(lock_fd_);
+			lock_fd_ = -1;
+			is_primary_ = false;
+		}
+#else
+		is_primary_ = false;
+#endif
+	}
+
+	~SingleInstanceGuard()
+	{
+#if defined(_WIN32)
+		if (handle_ != nullptr)
+			CloseHandle(handle_);
+#elif defined(__APPLE__) || defined(__linux__)
+		if (lock_fd_ >= 0)
+		{
+			flock(lock_fd_, LOCK_UN);
+			close(lock_fd_);
+		}
+#endif
+	}
+
+	SingleInstanceGuard(const SingleInstanceGuard&) = delete;
+	SingleInstanceGuard& operator=(const SingleInstanceGuard&) = delete;
+
+	bool IsPrimary() const noexcept
+	{
+		return is_primary_;
+	}
+
+private:
+	bool is_primary_ = true;
+#if defined(_WIN32)
+	HANDLE handle_ = nullptr;
+#elif defined(__APPLE__) || defined(__linux__)
+	int lock_fd_ = -1;
+#endif
+};
 
 /**
  * @brief 太字フォント（シミュレーション画面の見出し等で使用）
@@ -111,6 +205,12 @@ void UpdateWindowTitle(GLFWwindow* window, SceneType scene)
  */
 int main()
 {
+	// GLFWなどの初期化より前に二重起動を判定する。
+	// 既に起動中、または排他ロックを取得できない場合は終了する。
+	SingleInstanceGuard single_instance;
+	if (!single_instance.IsPrimary())
+		return 0;
+
 	// =========================================================
 	// GLFW
 	// =========================================================
