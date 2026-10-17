@@ -205,7 +205,7 @@ void UpdateWindowTitle(GLFWwindow* window, SceneType scene)
  */
 int main()
 {
-	// GLFWなどの初期化より前に二重起動を判定する。
+	// 最初に二重起動を判定する。
 	// 既に起動中、または排他ロックを取得できない場合は終了する。
 	SingleInstanceGuard single_instance;
 	if (!single_instance.IsPrimary())
