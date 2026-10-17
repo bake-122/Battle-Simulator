@@ -106,7 +106,6 @@ AI-Generated document
 
 | ファイル | 役割 |
 |---|---|
-| [Makefile](Makefile) | GCC による Debug / Release ビルドを定義する。Debug は各ソースを個別にコンパイルし、Release は `unity.cpp` を使う(Unity Build)。 |
 | [CMakeLists.txt](CMakeLists.txt) | CMake によるビルド構成を定義する。プラットフォーム別のリンク設定や macOS バンドル、フォント配置も扱う。 |
 | [unity.cpp](unity.cpp) | Release用にアプリケーションおよび Dear ImGui の実装ファイルをまとめてインクルードする。 |
 | `.github/workflows/` | デスクトップ向けおよび macOS 向けのビルドワークフローを保持する。 |
