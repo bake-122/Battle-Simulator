@@ -20,12 +20,12 @@ extern ImFont* g_font_bold;
  * @details UI固有のスクロール状態や入力状態をリセットし、シミュレーションの初期状態を設定します。
  * @param state 設定する初期チーム状態。
  */
-void SetSimulationTeamState(const TeamState& state);
+void setSimulationTeamState(const TeamState& state);
 
 /**
  * @brief 戦闘シミュレーション画面を描画し、フレーム更新を行います。
  * @return 遷移先または維持するシーンタイプ。
  */
-SceneType RenderSimulationScene();
+SceneType renderSimulationScene();
 
 #endif // SIMULATION_VIEW_HPP

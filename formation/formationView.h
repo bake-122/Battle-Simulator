@@ -41,16 +41,16 @@ public:
     FormationView();
 
     /** @brief 初期化処理。有効なキオクデータ一覧の抽出等を行う */
-    void Initialize();
+    void initialize();
 
     /** @brief 状態更新処理 */
-    void Update();
+    void update();
 
     /**
      * @brief 編成画面の描画処理
      * @return 次に遷移すべきシーン種別（Formation または Simulation）
      */
-    SceneType Draw();
+    SceneType draw();
 
 private:
 
@@ -296,8 +296,8 @@ private:
 	};
 
 	/**
-	 * @brief 星3のみ実装されているキオク(夏希, かこ, 美雨, このは)のこころの器用ボーナス配列
-	 * @note キオクポートレイトが存在しないため。
+	 * @brief 星3キオクとしてのみ実装されているキャラクター(夏希, かこ, 美雨, このは)のこころの器用ボーナス配列
+	 * @note キャラクター専用ポートレイトが存在しないため。
 	 */
 	static constexpr BonusStats HEARTPHIAL_STATS_LOW[] =
 	{
@@ -331,7 +331,7 @@ private:
 		{ 49, { 40, 0, 0 } },
 	};
 	
-	/** @brief 星4, 5キオク用のこころの器ステータスボーナス配列 */
+	/** @brief 星4, 5キオクが存在するキャラクターのこころの器ステータスボーナス配列 */
 	static constexpr BonusStats HEARTPHIAL_STATS_HIGH[] =
 	{
 		{ 6, { 30, 0, 0 } },
@@ -382,7 +382,7 @@ private:
 	 * @param data_index キオク配列インデックス
 	 * @param params 現在のパラメータ
 	 */
-	void InitializeParameterInput(
+	void initializeParameterInput(
 		PartySide side,
 		int slot_index,
 		int data_index,
@@ -395,7 +395,7 @@ private:
 	 * @param unit 対象キオク
 	 * @return 加算ステータス
 	 */
-	Stats CalcMagicLevelStats(const UnitParameters& params, const Character& unit) const;
+	Stats calcMagicLevelStats(const UnitParameters& params, const Character& unit) const;
 
 	/**
 	 * @brief こころの器による加算ステータスを計算する
@@ -403,7 +403,7 @@ private:
 	 * @param unit 対象キオク
 	 * @return 加算ステータス
 	 */
-	Stats CalcHeartphialStats(const UnitParameters& params, const Character& unit) const;
+	Stats calcHeartphialStats(const UnitParameters& params, const Character& unit) const;
 
 	/**
 	 * @brief 基礎ステータス、限界突破、魔力解放、こころの器を合算した最終ステータスを計算する
@@ -411,7 +411,7 @@ private:
 	 * @param unit 対象キオク
 	 * @return 合計ステータス
 	 */
-	Stats CalcStats(const UnitParameters& params, const Character& unit) const;
+	Stats calcStats(const UnitParameters& params, const Character& unit) const;
 
     /**
      * @brief 1陣営（5スロット分）のスロット状態とパラメータ
@@ -446,7 +446,7 @@ private:
      * @param side 陣営
      * @return PartySlots参照
      */
-    PartySlots& GetSlots(PartySide side);
+    PartySlots& getSlots(PartySide side);
 
     /**
      * @brief スロットにキオクを割り当てる（同陣営内の重複はスワップ）
@@ -454,33 +454,33 @@ private:
      * @param slot_index スロット番号
      * @param data_index キオク配列インデックス
      */
-    void AssignUnitToSlot(PartySide side, int slot_index, int data_index);
+    void assignUnitToSlot(PartySide side, int slot_index, int data_index);
 	
 	/**
 	 * @brief 指定スロットからキオクを解除して空にする
 	 * @param side 陣営
 	 * @param slot_index スロット番号
 	 */
-	void ClearUnitFromSlot(PartySide side, int slot_index);
+	void clearUnitFromSlot(PartySide side, int slot_index);
 
     /**
      * @brief 限界突破数に応じた必殺技最大レベルを取得する
      * @param ascension 限界突破数
      * @return 最大必殺技レベル
      */
-    int GetSpecialLevelMax(int ascension) const;
+    int getSpecialLevelMax(int ascension) const;
 
 	/**
 	 * @brief レベルに応じた魔力解放最大レベルを取得する
 	 * @param level キオクレベル
 	 * @return 最大魔力解放レベル
 	 */
-	int GetMagicLevelMax(int level) const;
+	int getMagicLevelMax(int level) const;
 
     /** @brief 属性の文字列表現を取得する */
-    const char* ElementToString(Element elem) const;
+    const char* elementToString(Element elem) const;
     /** @brief ロールの文字列表現を取得する */
-    const char* RoleToString(Role role) const;
+    const char* roleToString(Role role) const;
 
 
     // -------------------------------------------------------
@@ -488,19 +488,19 @@ private:
     // -------------------------------------------------------
 
     /** @brief 指定陣営のユニットスロット一覧を描画する */
-    void DrawUnitSlots(PartySide side);
+    void drawUnitSlots(PartySide side);
 
     /** @brief 指定陣営のパラメータ編集情報パネルを描画する */
-    void DrawUnitInformation(PartySide side);
+    void drawUnitInformation(PartySide side);
 
     /** @brief ホバー時のユニットツールチップを描画する */
-    void DrawUnitTooltip(const Character& ch) const;
+    void drawUnitTooltip(const Character& ch) const;
 
     /** @brief キオク選択モーダルウィンドウを描画する */
-    void DrawUnitSelector();
+    void drawUnitSelector();
 
     /** @brief スロット群の背景パネルを描画する */
-    void DrawUnitSlotBackground(PartySide side);
+    void drawUnitSlotBackground(PartySide side);
 };
 
 #endif // FORMATION_VIEW_H

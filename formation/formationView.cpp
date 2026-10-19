@@ -86,27 +86,27 @@ namespace
 	// -------------------------------------------------------
 
 	/** @brief 陣営が味方（Ally）であるかを判定します。 */
-	bool IsAlly(PartySide side)
+	bool isAlly(PartySide side)
 	{
 		return side == PartySide::Ally;
 	}
 
 	/** @brief Window名識別用の陣営文字列タグ（"Ally" または "Enemy"）を取得します。 */
-	const char* SideTag(PartySide side)
+	const char* sideTag(PartySide side)
 	{
-		return IsAlly(side) ? "Ally" : "Enemy";
+		return isAlly(side) ? "Ally" : "Enemy";
 	}
 
 	/** @brief 陣営のパネル背景色を取得します。 */
-	ImU32 PanelColor(PartySide side)
+	ImU32 panelColor(PartySide side)
 	{
-		return IsAlly(side) ? COLOR_ALLY_PANEL : COLOR_ENEMY_PANEL;
+		return isAlly(side) ? COLOR_ALLY_PANEL : COLOR_ENEMY_PANEL;
 	}
 
 	/** @brief 陣営のスロット行背景色を取得します。 */
-	ImU32 RowColor(PartySide side)
+	ImU32 rowColor(PartySide side)
 	{
-		return IsAlly(side) ? COLOR_ALLY_ROW : COLOR_ENEMY_ROW;
+		return isAlly(side) ? COLOR_ALLY_ROW : COLOR_ENEMY_ROW;
 	}
 
 	/**
@@ -114,9 +114,9 @@ namespace
 	 * @param side 対象陣営。
 	 * @return 左端X座標。
 	 */
-	float PanelLeft(PartySide side)
+	float panelLeft(PartySide side)
 	{
-		const float panel_start = IsAlly(side)
+		const float panel_start = isAlly(side)
 			? PANEL_MARGIN_X
 			: WINDOW_WIDTH - PANEL_MARGIN_X - PANEL_WIDTH;
 
@@ -128,9 +128,9 @@ namespace
 	 * @param side 対象陣営。
 	 * @return スロットX座標。
 	 */
-	float SlotX(PartySide side)
+	float slotX(PartySide side)
 	{
-		return PanelLeft(side) + SLOT_OFFSET_IN_PANEL;
+		return panelLeft(side) + SLOT_OFFSET_IN_PANEL;
 	}
 
 	/**
@@ -139,10 +139,10 @@ namespace
 	 * @param slot_index スロットインデックス（0～4）。
 	 * @return スロットの左上座標。
 	 */
-	ImVec2 SlotPosition(PartySide side, int slot_index)
+	ImVec2 slotPosition(PartySide side, int slot_index)
 	{
 		return ImVec2(
-			SlotX(side),
+			slotX(side),
 			SLOT_START_Y + slot_index * SLOT_PITCH
 		);
 	}
@@ -153,9 +153,9 @@ namespace
 	 * @param slot_index スロットインデックス（0～4）。
 	 * @return 情報Windowの左上座標。
 	 */
-	ImVec2 InfoPosition(PartySide side, int slot_index)
+	ImVec2 infoPosition(PartySide side, int slot_index)
 	{
-		const ImVec2 slot_pos = SlotPosition(side, slot_index);
+		const ImVec2 slot_pos = slotPosition(side, slot_index);
 
 		return ImVec2(
 			slot_pos.x + SLOT_SIZE + INFO_OFFSET_X,
@@ -169,13 +169,13 @@ namespace
 	 * @param slot_index スロットインデックス（0～4）。
 	 * @return 選択Windowの左上座標。
 	 */
-	ImVec2 SelectorPosition(PartySide side, int slot_index)
+	ImVec2 selectorPosition(PartySide side, int slot_index)
 	{
-		const ImVec2 slot_pos = SlotPosition(side, slot_index);
+		const ImVec2 slot_pos = slotPosition(side, slot_index);
 
 		float x;
 
-		if (IsAlly(side))
+		if (isAlly(side))
 		{
 			// 味方 → 右側（敵パーティー側）
 			x = slot_pos.x + SLOT_SIZE + SELECTOR_MARGIN;
@@ -219,7 +219,7 @@ namespace
 	 * @param data ImGuiコールバックデータ。
 	 * @return 処理結果コード。
 	 */
-	int IntegerInputCallback(ImGuiInputTextCallbackData* data)
+	int integerInputCallback(ImGuiInputTextCallbackData* data)
 	{
 		auto* callback_data =
 			static_cast<IntegerInputCallbackData*>(data->UserData);
@@ -376,7 +376,7 @@ namespace
 	 * @param buffer 出力先固定長バッファ。
 	 * @param value 書き込む整数値。
 	 */
-	void SetIntegerBuffer(
+	void setIntegerBuffer(
 		std::array<char, 16>& buffer,
 		int value)
 	{
@@ -396,7 +396,7 @@ namespace
 	 * @param min_value 最小許容値。
 	 * @param max_value 最大許容値。
 	 */
-	void DrawIntegerParameter(
+	void drawIntegerParameter(
 		const char* label,
 		std::array<char, 16>& buffer,
 		int& value,
@@ -486,7 +486,7 @@ namespace
 				min_value
 			);
 
-			SetIntegerBuffer(
+			setIntegerBuffer(
 				buffer,
 				value
 			);
@@ -515,7 +515,7 @@ namespace
 			buffer.size(),
 			ImGuiInputTextFlags_CallbackCharFilter |
 			ImGuiInputTextFlags_CallbackEdit,
-			IntegerInputCallback,
+			integerInputCallback,
 			&callback_data
 		);
 
@@ -571,7 +571,7 @@ namespace
 				max_value
 			);
 
-			SetIntegerBuffer(
+			setIntegerBuffer(
 				buffer,
 				value
 			);
@@ -591,7 +591,7 @@ namespace
 	 * @param index 検査するインデックス。
 	 * @return 有効範囲内ならtrue。
 	 */
-	bool IsValidKiokuIndex(int index)
+	bool isValidKiokuIndex(int index)
 	{
 		return index >= 0 &&
 			   index < static_cast<int>(std::size(Kioku_data));
@@ -602,7 +602,7 @@ namespace
 	 * @param unit 対象キオクデータ。
 	 * @return 名前文字列（nullptrの場合は "Unknown"）。
 	 */
-	const char* UnitName(const Character& unit)
+	const char* unitName(const Character& unit)
 	{
 		return unit.name ? unit.name : "Unknown";
 	}
@@ -618,7 +618,7 @@ namespace
 	 * @param stats ステータス値。
 	 */
 	template <typename Stats>
-	void DrawStatsRow(const char* label, const Stats& stats)
+	void drawStatsRow(const char* label, const Stats& stats)
 	{
 		ImGui::TableNextRow();
 
@@ -639,7 +639,7 @@ namespace
 	 * @brief ホバーツールチップの各レベル帯ステータステーブルを描画します。
 	 * @param ch 対象キオクデータ。
 	 */
-	void DrawStatsTable(const Character& ch)
+	void drawStatsTable(const Character& ch)
 	{
 		constexpr ImGuiTableFlags flags =
 			ImGuiTableFlags_Borders |
@@ -654,10 +654,10 @@ namespace
 		ImGui::TableSetupColumn("DEF");
 		ImGui::TableHeadersRow();
 
-		DrawStatsRow("Lv1",   ch.stats.lv1);
-		DrawStatsRow("Lv120", ch.stats.lv120);
-		DrawStatsRow("Lv140", ch.stats.lv140);
-		DrawStatsRow("Lv160", ch.stats.lv160);
+		drawStatsRow("Lv1",   ch.stats.lv1);
+		drawStatsRow("Lv120", ch.stats.lv120);
+		drawStatsRow("Lv140", ch.stats.lv140);
+		drawStatsRow("Lv160", ch.stats.lv160);
 
 		ImGui::EndTable();
 	}
@@ -673,7 +673,7 @@ namespace
 	 * @param center 円の中心座標。
 	 * @param highlighted ハイライト状態フラグ。
 	 */
-	void DrawSlotCircle(ImDrawList* draw_list,
+	void drawSlotCircle(ImDrawList* draw_list,
 						const ImVec2& center,
 						bool highlighted)
 	{
@@ -693,7 +693,7 @@ namespace
 
 
 // ===========================================================
-// Constructor / Initialize / Update / Draw
+// Constructor / initialize / update / draw
 // ===========================================================
 
 FormationView::FormationView()
@@ -701,7 +701,7 @@ FormationView::FormationView()
 }
 
 
-void FormationView::Initialize()
+void FormationView::initialize()
 {
 	// Kioku_data の有効なユニット (id != 0) だけを一覧化
 	valid_unit_indices.clear();
@@ -716,22 +716,22 @@ void FormationView::Initialize()
 }
 
 
-void FormationView::Update()
+void FormationView::update()
 {
-	// 現在は各UI操作を Draw 内で直接処理しているため、
+	// 現在は各UI操作を draw 内で直接処理しているため、
 	// 特別な更新処理はない。
 	// 将来的に入力処理と描画処理を分離する場合は、ここへ移す。
 }
 
 
-SceneType FormationView::Draw()
+SceneType FormationView::draw()
 {
 	SceneType next_scene = SceneType::Formation;
 	for (const PartySide side : ALL_SIDES)
 	{
-		DrawUnitSlots(side);
-		DrawUnitInformation(side);
-		DrawUnitSlotBackground(side);
+		drawUnitSlots(side);
+		drawUnitInformation(side);
+		drawUnitSlotBackground(side);
 	}
 
 	// -----------------------------------------------------------
@@ -818,32 +818,30 @@ SceneType FormationView::Draw()
 			if (ally_data_idx >= 0)
 			{
 				const Character& ch = Kioku_data[ally_data_idx];
-				const Stats stats = CalcStats(ally_slots.parameters[i], ch);
+				const Stats stats = calcStats(ally_slots.parameters[i], ch);
 				state.ally[i].character = ch;
 				state.ally[i].hp = stats.hp;
 				state.ally[i].atk = stats.atk;
 				state.ally[i].def = stats.def;
 				state.ally[i].currentMP = 0;
-				state.ally[i].magicLevel = ally_slots.parameters[i].magicLevel;
-				state.ally[i].av = 10000.0f / ch.spd;
 			}
 
 			const int enemy_data_idx = enemy_slots.unit_indices[i];
 			if (enemy_data_idx >= 0)
 			{
 				const Character& ch = Kioku_data[enemy_data_idx];
-				const Stats stats = CalcStats(enemy_slots.parameters[i], ch);
+				const Stats stats = calcStats(enemy_slots.parameters[i], ch);
 				state.enemy[i].character = ch;
 				state.enemy[i].hp = stats.hp;
 				state.enemy[i].atk = stats.atk;
 				state.enemy[i].def = stats.def;
 				state.enemy[i].currentMP = 0;
-				state.enemy[i].magicLevel = enemy_slots.parameters[i].magicLevel;
-				state.enemy[i].av = 10000.0f / ch.spd;
 			}
 		}
 
-		SetSimulationTeamState(state);
+		// AV は simulationLogic 側 initTimeline() 処理する。
+
+		setSimulationTeamState(state);
 		next_scene = SceneType::Simulation;
 	};
 
@@ -907,12 +905,12 @@ SceneType FormationView::Draw()
 	ImGui::End();
 
 	// 選択Windowは陣営共通 (1つだけ) - 最前面に表示するため最後に呼び出す
-	DrawUnitSelector();
+	drawUnitSelector();
 
 	return next_scene;
 }
 
-void FormationView::InitializeParameterInput(
+void FormationView::initializeParameterInput(
 	PartySide side,
 	int slot_index,
 	int data_index,
@@ -972,9 +970,9 @@ void FormationView::InitializeParameterInput(
 // パーティー操作
 // ===========================================================
 
-FormationView::PartySlots& FormationView::GetSlots(PartySide side)
+FormationView::PartySlots& FormationView::getSlots(PartySide side)
 {
-	return IsAlly(side) ? ally_slots : enemy_slots;
+	return isAlly(side) ? ally_slots : enemy_slots;
 }
 
 
@@ -982,11 +980,11 @@ FormationView::PartySlots& FormationView::GetSlots(PartySide side)
 // 同一判定は同じパーティー内のみ。
 //  - 同じパーティーの別スロットに既にいる → ユニットとパラメータを交換
 //  - 他方のパーティーにいる			   → 影響なし (そのまま選択)
-void FormationView::AssignUnitToSlot(PartySide side,
+void FormationView::assignUnitToSlot(PartySide side,
 									 int slot_index,
 									 int data_index)
 {
-	PartySlots& slots = GetSlots(side);
+	PartySlots& slots = getSlots(side);
 
 	const auto begin = slots.unit_indices.begin();
 	const auto end   = slots.unit_indices.end();
@@ -1016,7 +1014,7 @@ void FormationView::AssignUnitToSlot(PartySide side,
 
 
 // スロットからユニットを削除
-void FormationView::ClearUnitFromSlot(
+void FormationView::clearUnitFromSlot(
 	PartySide side,
 	int slot_index
 )
@@ -1027,7 +1025,7 @@ void FormationView::ClearUnitFromSlot(
 		return;
 	}
 
-	PartySlots& slots = GetSlots(side);
+	PartySlots& slots = getSlots(side);
 
 	// ユニットを外す
 	slots.unit_indices[slot_index] = -1;
@@ -1049,13 +1047,13 @@ void FormationView::ClearUnitFromSlot(
 // ===========================================================
 
 // 限界突破段階ごとの必殺技レベル上限
-int FormationView::GetSpecialLevelMax(int ascension) const {
+int FormationView::getSpecialLevelMax(int ascension) const {
 	if (ascension <= 2) return 4;
 	if (ascension <= 4) return 7;
 	return 10;
 }
 
-int FormationView::GetMagicLevelMax(int level) const {
+int FormationView::getMagicLevelMax(int level) const {
 	if (level <= 29) return 30;
 	if (level <= 59) return 60;
 	if (level <= 89) return 90;
@@ -1067,7 +1065,7 @@ int FormationView::GetMagicLevelMax(int level) const {
 }
 
 
-const char* FormationView::ElementToString(Element elem) const
+const char* FormationView::elementToString(Element elem) const
 {
 	switch (elem)
 	{
@@ -1082,7 +1080,7 @@ const char* FormationView::ElementToString(Element elem) const
 }
 
 
-const char* FormationView::RoleToString(Role role) const
+const char* FormationView::roleToString(Role role) const
 {
 	switch (role)
 	{
@@ -1096,7 +1094,7 @@ const char* FormationView::RoleToString(Role role) const
 	}
 }
 
-Stats FormationView::CalcMagicLevelStats(const UnitParameters& params, const Character& unit) const
+Stats FormationView::calcMagicLevelStats(const UnitParameters& params, const Character& unit) const
 {
 	const BonusStats* bonusStats = nullptr;
 	int bonusNum;
@@ -1123,7 +1121,7 @@ Stats FormationView::CalcMagicLevelStats(const UnitParameters& params, const Cha
 	return result;
 }
 
-Stats FormationView::CalcHeartphialStats(const UnitParameters& params, const Character& unit) const
+Stats FormationView::calcHeartphialStats(const UnitParameters& params, const Character& unit) const
 {
 	const BonusStats* bonusStats = nullptr;
 	int bonusNum;
@@ -1150,18 +1148,7 @@ Stats FormationView::CalcHeartphialStats(const UnitParameters& params, const Cha
 	return result;
 }
 
-/* Parameter -> Stats
- * [仮説]
- * Statsにあるhp, atk, defはUnitParametersから一意に定まる。
- * ascension = 0, heartphial = 1,magicLevel = 0の状態において、
- * level = 1, 120, 140, 160 時点のStatsが中継点(Breakpoint)となっている。これらはそのまま
- * Kioku_data[i].statsの各レベルの値に対応している。
- * level = 125のような中継点以外の値については、その前後の中継点のStatsの線形補間になっている。
- * なお、小数以下切り捨ての処理は、intの上での計算をすることで代替している。
- * ascensionが1以上のとき、補間後のStatsを一定数だけ掛ける。
- * その後、magicLevel, heartphialによる補正項を加える。
- */
-Stats FormationView::CalcStats(const UnitParameters& params, const Character& unit) const
+Stats FormationView::calcStats(const UnitParameters& params, const Character& unit) const
 {
 	// 限界突破による倍率
 	constexpr int ASCENSION_RATIO[] = { 100, 102, 104, 106, 108, 110 };
@@ -1185,22 +1172,6 @@ Stats FormationView::CalcStats(const UnitParameters& params, const Character& un
 	while (index < static_cast<int>(std::size(breakpoints)) - 2 && params.level > breakpoints[index + 1].level)
 		++index;
 	
-	/* 以降の処理と同値:
-	 * Stats baseStats;
-	 * baseStats.hp = Breakpoints[index].stats->hp + (Breakpoints[index+1].stats->hp - Breakpoints[index].stats->hp) * (params.level - Breakpoints[index].level) / (Breakpoints[index+1].level - Breakpoints[index].level);
-	 * baseStats.atk = Breakpoints[index].stats->atk + (Breakpoints[index+1].stats->atk - Breakpoints[index].stats->atk) * (params.level - Breakpoints[index].level) / (Breakpoints[index+1].level - Breakpoints[index].level);
-	 * baseStats.def = Breakpoints[index].stats->def + (Breakpoints[index+1].stats->def - Breakpoints[index].stats->def) * (params.level - Breakpoints[index].level) / (Breakpoints[index+1].level - Breakpoints[index].level);
-	 * 
-	 * Stats result;
-	 * result.hp = baseStats.hp * ASCENSION_RATIO[params.ascension] / 100;
-	 * result.atk = baseStats.atk * ASCENSION_RATIO[params.ascension] / 100;
-	 * result.def = baseStats.def * ASCENSION_RATIO[params.ascension] / 100;
-	 *
-	 * result += CalcMagicLevelStats(params, unit) + CalcHeartphialStats(params, unit);
-	 * 
-	 * return result;
-	 */
-	
 	const Breakpoint& low = breakpoints[index];
 	const Breakpoint& high = breakpoints[index + 1];
 	
@@ -1215,7 +1186,7 @@ Stats FormationView::CalcStats(const UnitParameters& params, const Character& un
 		calc(low.stats->hp, high.stats->hp),
 		calc(low.stats->atk, high.stats->atk),
 		calc(low.stats->def, high.stats->def)
-	} + CalcMagicLevelStats(params, unit) + CalcHeartphialStats(params, unit);
+	} + calcMagicLevelStats(params, unit) + calcHeartphialStats(params, unit);
 }
 	
 
@@ -1224,16 +1195,16 @@ Stats FormationView::CalcStats(const UnitParameters& params, const Character& un
 // ユニットスロット
 // ===========================================================
 
-void FormationView::DrawUnitSlots(PartySide side)
+void FormationView::drawUnitSlots(PartySide side)
 {
-	PartySlots& slots = GetSlots(side);
+	PartySlots& slots = getSlots(side);
 
 	const ImVec2 slot_size(SLOT_SIZE, SLOT_SIZE);
 	const float  slot_radius = SLOT_SIZE * 0.5f;
 
 	for (int slot_index = 0; slot_index < SLOT_COUNT; ++slot_index)
 	{
-		const ImVec2 slot_pos = SlotPosition(side, slot_index);
+		const ImVec2 slot_pos = slotPosition(side, slot_index);
 		const ImVec2 slot_center(
 			slot_pos.x + slot_radius,
 			slot_pos.y + slot_radius
@@ -1241,7 +1212,7 @@ void FormationView::DrawUnitSlots(PartySide side)
 
 		// 現在のスロットに入っているユニット
 		const int  selected_index = slots.unit_indices[slot_index];
-		const bool has_unit	   = IsValidKiokuIndex(selected_index);
+		const bool has_unit	   = isValidKiokuIndex(selected_index);
 
 		// マウスが円の内側にあるか
 		const ImVec2 mouse_pos = ImGui::GetMousePos();
@@ -1271,7 +1242,7 @@ void FormationView::DrawUnitSlots(PartySide side)
 		std::snprintf(
 			window_name, sizeof(window_name),
 			"Unit Slot %d##%sSlot%d",
-			slot_index + 1, SideTag(side), slot_index
+			slot_index + 1, sideTag(side), slot_index
 		);
 
 		ImGuiWindowFlags window_flags =
@@ -1334,7 +1305,7 @@ void FormationView::DrawUnitSlots(PartySide side)
 		// 円周
 		if (draw_circle)
 		{
-			DrawSlotCircle(
+			drawSlotCircle(
 				ImGui::GetWindowDrawList(),
 				slot_center,
 				slot_highlighted
@@ -1446,7 +1417,7 @@ void FormationView::DrawUnitSlots(PartySide side)
 		// マウスホバー時のツールチップ
 		if (!show_unit_selector && inside_circle && has_unit)
 		{
-			DrawUnitTooltip(Kioku_data[selected_index]);
+			drawUnitTooltip(Kioku_data[selected_index]);
 		}
 
 		ImGui::End();
@@ -1458,7 +1429,7 @@ void FormationView::DrawUnitSlots(PartySide side)
 // スロット横のユニット情報
 // ===========================================================
 
-void FormationView::DrawUnitInformation(PartySide side)
+void FormationView::drawUnitInformation(PartySide side)
 {
 	constexpr ImGuiWindowFlags window_flags =
 		ImGuiWindowFlags_NoTitleBar |
@@ -1469,7 +1440,7 @@ void FormationView::DrawUnitInformation(PartySide side)
 		ImGuiWindowFlags_NoBringToFrontOnFocus |
 		ImGuiWindowFlags_NoFocusOnAppearing;
 
-	PartySlots& slots = GetSlots(side);
+	PartySlots& slots = getSlots(side);
 
 	for (int slot_index = 0;
 		 slot_index < SLOT_COUNT;
@@ -1479,7 +1450,7 @@ void FormationView::DrawUnitInformation(PartySide side)
 			slots.unit_indices[slot_index];
 
 		// 空スロットは表示しない
-		if (!IsValidKiokuIndex(selected_index))
+		if (!isValidKiokuIndex(selected_index))
 			continue;
 
 		const Character& unit =
@@ -1495,12 +1466,12 @@ void FormationView::DrawUnitInformation(PartySide side)
 			sizeof(window_name),
 			"Unit Info %d##%sInfo%d",
 			slot_index + 1,
-			SideTag(side),
+			sideTag(side),
 			slot_index
 		);
 
 		ImGui::SetNextWindowPos(
-			InfoPosition(side, slot_index)
+			infoPosition(side, slot_index)
 		);
 
 		ImGui::SetNextWindowSize(
@@ -1533,7 +1504,7 @@ void FormationView::DrawUnitInformation(PartySide side)
 
 		ImGui::Text(
 			"%s",
-			UnitName(unit)
+			unitName(unit)
 		);
 
 		ImGui::PopFont();
@@ -1546,7 +1517,7 @@ void FormationView::DrawUnitInformation(PartySide side)
 			"限界突破: %d, 必殺Lv: %d, HP: %d",
 			params.ascension,
 			params.specialLvl,
-			CalcStats(params, unit).hp
+			calcStats(params, unit).hp
 		);
 
 		// ---------------------------------------------------
@@ -1557,8 +1528,8 @@ void FormationView::DrawUnitInformation(PartySide side)
 		{
 			ImGui::Text(
 				"ATK: %d, DEF: %d, SPD: %d, BP: %d",
-				CalcStats(params, unit).atk,
-				CalcStats(params, unit).def,
+				calcStats(params, unit).atk,
+				calcStats(params, unit).def,
 				unit.spd,
 				std::find_if(
 					BP_Kioku_List.begin(),
@@ -1571,8 +1542,8 @@ void FormationView::DrawUnitInformation(PartySide side)
 		{
 			ImGui::Text(
 				"ATK: %d, DEF: %d, SPD: %d, MP: %d",
-				CalcStats(params, unit).atk,
-				CalcStats(params, unit).def,
+				calcStats(params, unit).atk,
+				calcStats(params, unit).def,
 				unit.spd,
 				unit.mp
 			);
@@ -1588,7 +1559,7 @@ void FormationView::DrawUnitInformation(PartySide side)
 
 		if (ImGui::SmallButton("Clear"))
 		{
-			ClearUnitFromSlot(
+			clearUnitFromSlot(
 				side,
 				slot_index
 			);
@@ -1603,20 +1574,20 @@ void FormationView::DrawUnitInformation(PartySide side)
 // ホバー時のツールチップ
 // ===========================================================
 
-void FormationView::DrawUnitTooltip(const Character& ch) const
+void FormationView::drawUnitTooltip(const Character& ch) const
 {
 	ImGui::BeginTooltip();
 
-	ImGui::Text("Name: %s",	UnitName(ch));
-	ImGui::Text("Element: %s", ElementToString(ch.element));
-	ImGui::Text("Role: %s",	RoleToString(ch.role));
+	ImGui::Text("Name: %s",	unitName(ch));
+	ImGui::Text("Element: %s", elementToString(ch.element));
+	ImGui::Text("Role: %s",	roleToString(ch.role));
 	ImGui::Text("SPD: %d  |  MP: %d", ch.spd, ch.mp);
 
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Text("--- Stats ---");
 
-	DrawStatsTable(ch);
+	drawStatsTable(ch);
 
 	ImGui::EndTooltip();
 }
@@ -1626,7 +1597,7 @@ void FormationView::DrawUnitTooltip(const Character& ch) const
 // ユニット選択Window (Ally/Enemy共通)
 // ===========================================================
 
-void FormationView::DrawUnitSelector()
+void FormationView::drawUnitSelector()
 {
 	if (!show_unit_selector)
 		return;
@@ -1656,7 +1627,7 @@ void FormationView::DrawUnitSelector()
 	// ---------------------------------------------------
 
 	PartySlots& slots =
-		GetSlots(selector_side);
+		getSlots(selector_side);
 
 
 	// ---------------------------------------------------
@@ -1664,7 +1635,7 @@ void FormationView::DrawUnitSelector()
 	// ---------------------------------------------------
 
 	ImGui::SetNextWindowPos(
-		SelectorPosition(
+		selectorPosition(
 			selector_side,
 			selector_slot_index
 		),
@@ -1746,7 +1717,7 @@ void FormationView::DrawUnitSelector()
 	for (const int data_index : valid_unit_indices)
 	{
 		if (!ImGui::Selectable(
-				UnitName(Kioku_data[data_index])))
+				unitName(Kioku_data[data_index])))
 		{
 			continue;
 		}
@@ -1756,7 +1727,7 @@ void FormationView::DrawUnitSelector()
 			continue;
 
 
-		AssignUnitToSlot(
+		assignUnitToSlot(
 			selector_side,
 			selector_slot_index,
 			data_index
@@ -1798,7 +1769,7 @@ void FormationView::DrawUnitSelector()
 	// ---------------------------------------------------
 
 	if (slot_valid &&
-		IsValidKiokuIndex(edit_data_index))
+		isValidKiokuIndex(edit_data_index))
 	{
 		const Character& unit =
 			Kioku_data[edit_data_index];
@@ -1814,7 +1785,7 @@ void FormationView::DrawUnitSelector()
 		// 毎フレーム値を上書きするわけではない。
 		// ---------------------------------------------------
 
-		InitializeParameterInput(
+		initializeParameterInput(
 			selector_side,
 			selector_slot_index,
 			edit_data_index,
@@ -1828,7 +1799,7 @@ void FormationView::DrawUnitSelector()
 
 		ImGui::Text(
 			"%s",
-			UnitName(unit)
+			unitName(unit)
 		);
 
 		ImGui::Separator();
@@ -1839,7 +1810,7 @@ void FormationView::DrawUnitSelector()
 		// ---------------------------------------------------
 
 		const int max_special_level =
-			GetSpecialLevelMax(
+			getSpecialLevelMax(
 				params.ascension
 			);
 
@@ -1860,7 +1831,7 @@ void FormationView::DrawUnitSelector()
 
 		if (params.specialLvl != old_special_level)
 		{
-			SetIntegerBuffer(
+			setIntegerBuffer(
 				parameter_input.buffers[4],
 				params.specialLvl
 			);
@@ -1871,7 +1842,7 @@ void FormationView::DrawUnitSelector()
 		// ---------------------------------------------------
 
 		const int max_magic_level =
-			GetMagicLevelMax(
+			getMagicLevelMax(
 				params.level
 			);
 
@@ -1892,7 +1863,7 @@ void FormationView::DrawUnitSelector()
 
 		if (params.magicLevel != old_magic_level)
 		{
-			SetIntegerBuffer(
+			setIntegerBuffer(
 				parameter_input.buffers[3],
 				params.magicLevel
 			);
@@ -1908,7 +1879,7 @@ void FormationView::DrawUnitSelector()
 		// 限界突破
 		// ---------------------------------------------------
 
-		DrawIntegerParameter(
+		drawIntegerParameter(
 			"限界突破 (Ascension)",
 			parameter_input.buffers[0],
 			params.ascension,
@@ -1924,7 +1895,7 @@ void FormationView::DrawUnitSelector()
 		// レベル
 		// ---------------------------------------------------
 
-		DrawIntegerParameter(
+		drawIntegerParameter(
 			"レベル (Lvl)",
 			parameter_input.buffers[1],
 			params.level,
@@ -1940,7 +1911,7 @@ void FormationView::DrawUnitSelector()
 		// こころの器
 		// ---------------------------------------------------
 
-		DrawIntegerParameter(
+		drawIntegerParameter(
 			"こころの器 (Heartphial)",
 			parameter_input.buffers[2],
 			params.heartphial,
@@ -1956,7 +1927,7 @@ void FormationView::DrawUnitSelector()
 		// 魔力解放
 		// ---------------------------------------------------
 
-		DrawIntegerParameter(
+		drawIntegerParameter(
 			"魔力解放 (Magic Lvl)",
 			parameter_input.buffers[3],
 			params.magicLevel,
@@ -1972,7 +1943,7 @@ void FormationView::DrawUnitSelector()
 		// 必殺レベル: Ascensionによって上限が変化する。
 		// ---------------------------------------------------
 
-		DrawIntegerParameter(
+		drawIntegerParameter(
 			"必殺レベル (Special Lvl)",
 			parameter_input.buffers[4],
 			params.specialLvl,
@@ -2013,7 +1984,7 @@ void FormationView::DrawUnitSelector()
 // 背景矩形 (Ally: 左側 / Enemy: 右側)
 // ===========================================================
 
-void FormationView::DrawUnitSlotBackground(PartySide side)
+void FormationView::drawUnitSlotBackground(PartySide side)
 {
 	// 全スロットを囲む高さ
 	constexpr float SLOTS_HEIGHT =
@@ -2022,7 +1993,7 @@ void FormationView::DrawUnitSlotBackground(PartySide side)
 	constexpr float PANEL_TOP	= SLOT_START_Y - PANEL_MARGIN_Y;
 	constexpr float PANEL_HEIGHT = SLOTS_HEIGHT + PANEL_MARGIN_Y * 2.0f;
 
-	const float panel_left = PanelLeft(side);
+	const float panel_left = panelLeft(side);
 
 	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
@@ -2030,7 +2001,7 @@ void FormationView::DrawUnitSlotBackground(PartySide side)
 	draw_list->AddRectFilled(
 		ImVec2(panel_left,			   PANEL_TOP),
 		ImVec2(panel_left + PANEL_WIDTH, PANEL_TOP + PANEL_HEIGHT),
-		PanelColor(side),
+		panelColor(side),
 		PANEL_RADIUS
 	);
 
@@ -2042,12 +2013,12 @@ void FormationView::DrawUnitSlotBackground(PartySide side)
 
 	for (int i = 0; i < SLOT_COUNT; ++i)
 	{
-		const float row_top = SlotPosition(side, i).y - ROW_MARGIN_Y;
+		const float row_top = slotPosition(side, i).y - ROW_MARGIN_Y;
 
 		draw_list->AddRectFilled(
 			ImVec2(row_left,			 row_top),
 			ImVec2(row_left + row_width, row_top + ROW_HEIGHT),
-			RowColor(side),
+			rowColor(side),
 			ROW_RADIUS
 		);
 	}

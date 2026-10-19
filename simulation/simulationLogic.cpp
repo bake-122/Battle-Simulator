@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace
@@ -16,7 +17,7 @@ namespace
     TeamState g_teamState{};
     SkillType g_currentSkillType = SkillType::BA;
 
-    void HandleDamageApplied(void* context, int team, int slot,
+    void handleDamageApplied(void* context, int team, int slot,
                              bool* allySlotOccupied, bool* enemySlotOccupied);
 
     /**
@@ -26,7 +27,7 @@ namespace
      * @param slot スロット番号（0～4）。
      * @return 対象HPへのポインタ。不正時はnullptr。
      */
-    int* ResolveTargetHP(void* context, int team, int slot)
+    int* resolveTargetHP(void* context, int team, int slot)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
             (team != 0 && team != 1))
@@ -47,7 +48,7 @@ namespace
      * @param slot スロット番号（0～4）。
      * @return 総防御力（float）。不正時は0.0f。
      */
-    float ResolveTargetDef(void* context, int team, int slot)
+    float resolveTargetDef(void* context, int team, int slot)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
             (team != 0 && team != 1))
@@ -63,6 +64,74 @@ namespace
     }
 }
 
+// ===========================================================
+// AV・SPD 処理
+// ===========================================================
+
+/**
+ * @brief ユニットの現在のtotalSPDを計算します。
+ * @details [現行: SPD効果の状態未実装] 基礎SPDのみを返す。
+ *			原則2パス合成（加算的効果を基礎値へ適用順に反映し、続いて
+ *			乗算的効果を合計値へ適用順に反映する。）でtotalSPDを計算し、
+ *			最後に float へ変換する。状態エンジン実装時にこの関数を置換する。
+ */
+float calcTotalSPD(const UnitStatDetails& unit)
+{
+	// TODO: ここにSPD効果の処理を入れる
+    return static_cast<float>(unit.character.spd);
+}
+
+/**
+ * @brief AVにその時点でのTurnAVを代入します（TL初期化 / 行動開始時のAV計算）。
+ * @details calcTotalSPD -> turnPriority = 0; -> av = 10000 / totalSPD の順で処理する。
+ *			AV値が同じノードが既にTLに存在するとき、そのノードより後方に配置される。
+ */
+void setTurnAV(UnitStatDetails& unit)
+{
+    unit.totalSPD = calcTotalSPD(unit);
+    unit.turnPriority = 0;
+    unit.av = 10000.0f / unit.totalSPD;
+}
+
+/**
+ * @brief SPD変化時のAV再スケールを行います。
+ * @details SPDに何も変化がなければ何も処理しない。また、
+ *          Priority の更新はこの関数では行わない（効果適用側で
+ *          nextTurnOrderPriority() を呼ぶ）。
+ */
+void rescaleAVBySpeed(UnitStatDetails& unit, float newSPD)
+{
+    if (unit.totalSPD != newSPD)
+    {
+        unit.av = (unit.totalSPD / newSPD) * unit.av;
+        unit.totalSPD = newSPD;
+    }
+}
+
+/**
+ * @brief 行動順上昇/減少効果（AA/AD）によるAV更新を行います。
+ * @details turnAVを求め、それの割合 rate を対象の AV に加え、0との最大値をとる。
+ *          行動順上昇は rate < 0、行動順減少は rate > 0。
+ *          rate と priority は各効果適用につき1度だけ計算し、全対象で同一の値を使う。
+ */
+void shiftAVByActionOrder(UnitStatDetails& unit, float rate, std::uint32_t priority)
+{
+    const float turnAV = 10000.0f / unit.totalSPD;
+    const float nextAV = (turnAV * rate) + unit.av;
+    unit.av = (nextAV <= 0.0f) ? 0.0f : nextAV;
+    unit.turnPriority = priority;
+}
+
+/**
+ * @brief 次のターン優先権番号を発行します。
+ * @details 効果適用1回につき1度発行する。発行した値を、その効果の対象に
+ *          与える（AVが変わりえない効果では呼ばれない）。
+ */
+std::uint32_t nextTurnOrderPriority(TeamState& team)
+{
+    return team.nextTurnPriority++;
+}
+
 namespace
 {
     /**
@@ -72,10 +141,10 @@ namespace
     {
         TeamState teamState;                       /**< チーム状態 */
         std::vector<TimelineNode> timeline;        /**< タイムライン配列 */
-        int actorTeam = -1;                        /**< アクターのチーム */
-        int actorSlot = -1;                        /**< アクターのスロット */
-        int selectedTargetTeam = -1;               /**< 選択されたターゲットチーム */
-        int selectedTargetSlot = -1;               /**< 選択されたターゲットスロット */
+        int actorTeam = -1;                        /**< Actorのチーム */
+        int actorSlot = -1;                        /**< Actorのスロット */
+        int selectedTargetTeam = -1;               /**< 選択された対象のチーム */
+        int selectedTargetSlot = -1;               /**< 選択された対象のスロット */
         float accumTime = 0.0f;                    /**< 累積時間 */
     };
 }
@@ -120,7 +189,7 @@ static int g_historyIndex = 0;
 namespace
 {
     /**
-     * @brief 付与効果・被付与効果の解除処理（将来実装用のスタブ）。
+     * @brief 付与効果・被付与効果の解除処理（将来実装用）。
      * @param team チーム番号。
      * @param slot スロット番号。
      */
@@ -138,7 +207,7 @@ namespace
      * @param allySlotOccupied 味方スロット占有配列。
      * @param enemySlotOccupied 敵スロット占有配列。
      */
-    void HandleDamageApplied(void* context, int team, int slot,
+    void handleDamageApplied(void* context, int team, int slot,
                              bool* allySlotOccupied, bool* enemySlotOccupied)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
@@ -157,7 +226,7 @@ namespace
             return;
         }
 
-        // 死亡したキオクの個人ゲージを消去する。SPはパーティ共有値なので変更しない。
+        // 戦闘不能になったユニットのMP, SP, 与えている効果、受けている効果をすべて解除する。SPはパーティ共有値なので変更しない。
         target.currentMP = 0;
         target.currentBP = 0;
         RemoveEffectsGivenOrReceived(team, slot);
@@ -180,7 +249,7 @@ namespace
             g_timeline.end()
         );
 
-        // Actorが死亡した場合も、Actor参照を死亡キオクに残さない。
+        // Actor が戦闘不能になった場合 (持続ダメージ等)
         if (g_actorTeam == team && g_actorSlot == slot)
         {
             if (g_timeline.empty())
@@ -200,17 +269,17 @@ namespace
 /**
  * @brief ターンを1回分進行させ、スキル実行・AV更新・ログ記録を行います。
  * @param skillType 実行するスキル種別。
- * @param actorTeam アクターのチーム番号。
- * @param actorSlot アクターのスロットインデックス。
- * @param targetTeam ターゲットのチーム番号。
- * @param targetSlot ターゲットのスロットインデックス。
+ * @param actorTeam Actorのチーム。
+ * @param actorSlot Actorのスロット番号。
+ * @param targetTeam 対象のチーム。
+ * @param targetSlot 対象のスロット番号。
  */
-static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot);
+static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot);
 
 /**
  * @brief 現在のチーム状態への参照を取得します。
  */
-const TeamState& GetSimulationTeamState()
+const TeamState& getSimulationTeamState()
 {
     return g_teamState;
 }
@@ -218,11 +287,10 @@ const TeamState& GetSimulationTeamState()
 /**
  * @brief ロジック側のチーム状態を設定・初期化します。
  */
-void SetSimulationTeamStateLogic(const TeamState& state)
+void setSimulationTeamStateLogic(const TeamState& state)
 {
     g_teamState = state;
 
-    // 戦闘開始時のHPを最大HPとして固定する。
     for (int i = 0; i < 5; ++i)
     {
         for (UnitStatDetails* slot : { &g_teamState.ally[i], &g_teamState.enemy[i] })
@@ -230,7 +298,7 @@ void SetSimulationTeamStateLogic(const TeamState& state)
             if (slot->character.id != 0)
             {
                 slot->hp = std::max(0, slot->hp);
-                // 戦闘開始時点のHPを最大HPとして固定する。
+                // 戦闘開始時点のHPを最大HPとする
                 slot->maxHP = slot->hp;
                 if (slot->hp == 0)
                 {
@@ -246,59 +314,59 @@ void SetSimulationTeamStateLogic(const TeamState& state)
         }
     }
 
-    InitTimeline();
+    initTimeline();
 }
 
 /**
  * @brief 現在のタイムラインを取得します。
  */
-const std::vector<TimelineNode>& GetTimeline()
+const std::vector<TimelineNode>& getTimeline()
 {
     return g_timeline;
 }
 
 /**
- * @brief アクションログ一覧を取得します。
+ * @brief 行動履歴を取得します。
  */
-const std::vector<std::string>& GetActionLog()
+const std::vector<std::string>& getActionLog()
 {
     return g_actionLog;
 }
 
 /**
- * @brief 現在のアクターのチームを取得します。
+ * @brief 現在のActorのチームを取得します。
  */
-int GetActorTeam() { return g_actorTeam; }
+int getActorTeam() { return g_actorTeam; }
 
 /**
- * @brief 現在のアクターのスロットインデックスを取得します。
+ * @brief 現在のActorのスロットインデックスを取得します。
  */
-int GetActorSlot() { return g_actorSlot; }
+int getActorSlot() { return g_actorSlot; }
 
 /**
  * @brief 戦闘開始からの累積時間を取得します。
  */
-float GetAccumTime() { return g_accumTime; }
+float getAccumTime() { return g_accumTime; }
 
 /**
  * @brief 現在の履歴インデックスを取得します。
  */
-int GetHistoryIndex() { return g_historyIndex; }
+int getHistoryIndex() { return g_historyIndex; }
 
 /**
  * @brief 保存されている履歴総数を取得します。
  */
-int GetHistoryCount() { return static_cast<int>(g_historySequence.size()); }
+int getHistoryCount() { return static_cast<int>(g_historySequence.size()); }
 
 /**
  * @brief 現在選択されているスキル種別を取得します。
  */
-SkillType GetCurrentSkillType() { return g_currentSkillType; }
+SkillType getCurrentSkillType() { return g_currentSkillType; }
 
 /**
  * @brief 現在選択されているスキル種別を切り替えます（BA <-> BS）。
  */
-void ToggleCurrentSkillType()
+void toggleCurrentSkillType()
 {
     // SA は常時選択不可。BA と BS の間だけを切り替える。
     g_currentSkillType = (g_currentSkillType == SkillType::BA)
@@ -307,23 +375,127 @@ void ToggleCurrentSkillType()
 }
 
 /**
- * @brief タイムラインをソートします（AV昇順 -> TP昇順）。
+ * @brief TLの2ノード(a, b)を受け取り、aが先行なら-1、そうでないなら1を返します。
+ * @details ノードの先行判断は以下による整列による:
+ *  1) AV 昇順
+ *  2) turnPriority 降順
+ *  3) チーム順 (ally -> enemy）
+ *  4) slotIndex 昇順
+ * スロットはチーム内で一意のため全キー一致は構造上発生しない。
  */
-static void SortTimeline()
+static int compareTurnOrder(const TeamState& state, const TimelineNode& a, const TimelineNode& b)
 {
-    std::sort(g_timeline.begin(), g_timeline.end(),
-        [](const TimelineNode& a, const TimelineNode& b)
+    const UnitStatDetails& unitA =
+        (a.team == 1) ? state.ally[a.slotIndex] : state.enemy[a.slotIndex];
+    const UnitStatDetails& unitB =
+        (b.team == 1) ? state.ally[b.slotIndex] : state.enemy[b.slotIndex];
+
+	// 1. AVが小さい方が先行
+    if (unitA.av != unitB.av)
+		return (unitA.av < unitB.av) ? -1 : 1;
+	
+	// 2. turnPriorityが大きい方が先行
+    if (unitA.turnPriority != unitB.turnPriority)
+		return (unitA.turnPriority > unitB.turnPriority) ? -1 : 1;
+	
+	// 3. チームが異なるとき、味方側が先行 (TL初期化用)
+    if (a.team != b.team)
+		return (a.team > b.team) ? -1 : 1;
+	
+	// 4. slotIndexが小さい方が先行
+    return (a.slotIndex < b.slotIndex) ? -1 : 1;
+}
+
+/**
+ * @brief タイムラインを整列します（N<=10のほぼ整列済み配列への Insertion）。
+ * @details shiftNextTurn 後はfloatの丸め衝突の可能性があるため
+ *          全体ソートで整列し直す。単一ユニットの変化は relocateTimelineNode を使う。
+ */
+static void sortTimeline()
+{
+    for (int i = 1; i < static_cast<int>(g_timeline.size()); ++i)
+    {
+        const TimelineNode key = g_timeline[i];
+        int j = i - 1;
+        while (j >= 0 && compareTurnOrder(g_teamState, key, g_timeline[j]) < 0)
         {
-            if (a.av != b.av) return a.av < b.av;
-            return a.tp < b.tp;
+            g_timeline[j + 1] = g_timeline[j];
+            --j;
         }
-    );
+        g_timeline[j + 1] = key;
+    }
+}
+
+/**
+ * @brief 単一ユニットの AV / Priority 変化を整列位置へ反映します（方式: 削除+挿入）。
+ * @details setTurnAV / shiftAVByActionOrder / rescaleAVBySpeed の後など、
+ *          1ユニットだけが変化した場合に全体ソート（O(n^2)）を避けたいため。TLが整列済みで
+ *          ある限り、1ノードの削除+挿入で整列は保存される。
+ */
+static void relocateTimelineNode(int team, int slotIndex)
+{
+    int index = -1;
+    for (int i = 0; i < static_cast<int>(g_timeline.size()); ++i)
+    {
+        if (g_timeline[i].team == team && g_timeline[i].slotIndex == slotIndex)
+        {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+    {
+        return;
+    }
+
+    const TimelineNode node = g_timeline[index];
+    g_timeline.erase(g_timeline.begin() + index);
+
+    int insertPos = static_cast<int>(g_timeline.size());
+    for (int i = 0; i < static_cast<int>(g_timeline.size()); ++i)
+    {
+        if (compareTurnOrder(g_teamState, node, g_timeline[i]) < 0)
+        {
+            insertPos = i;
+            break;
+        }
+    }
+    g_timeline.insert(g_timeline.begin() + insertPos, node);
+}
+
+/**
+ * @brief 先頭ユニットの AV を全ユニットから引きます。
+ * @details AV = max(0, AV − minAV)。この関数は「行動終了後・次の行動開始前」のタイミングで
+ *          呼ばれ、処理後、全体ソートで整列を取り直すようにしている。
+ *          minAV 減算によって通常大小逆転は発生しないが、float の丸めにより異なる値が
+ *          同じ値になることがある。 sortTimeline はこのようなノードに対し、4つの変数による
+ *			整列に直す処理をとっているが、実機で同じ処理になっているかは不明。
+ */
+static void shiftNextTurn(float minAV)
+{
+    for (const TimelineNode& node : g_timeline)
+    {
+        UnitStatDetails& unit = (node.team == 1)
+            ? g_teamState.ally[node.slotIndex]
+            : g_teamState.enemy[node.slotIndex];
+        unit.av = std::max(0.0f, unit.av - minAV);
+    }
+    sortTimeline();
+	g_accumTime += minAV;
+}
+
+/**
+ * @brief ユニットの行動値（UnitStatDetails.av）を取得します。
+ */
+static float resolveUnitAV(const TeamState& state, int team, int slotIndex)
+{
+    return (team == 1) ? state.ally[slotIndex].av : state.enemy[slotIndex].av;
 }
 
 /**
  * @brief 現在の状態をスナップショットとして履歴に保存します。
  */
-static void CaptureSnapshot()
+static void captureSnapshot()
 {
     HistorySnapshot snap;
     snap.teamState = g_teamState;
@@ -337,9 +509,9 @@ static void CaptureSnapshot()
 }
 
 /**
- * @brief 指定されたインデックスのシミュレーション状態を正確に復元します。
+ * @brief 指定された履歴のインデックスにおける盤面を復元します。
  */
-void RestoreHistoryStep(int index)
+void restoreHistoryStep(int index)
 {
     if (index < 0 ||
         index >= static_cast<int>(g_historySequence.size()))
@@ -369,11 +541,63 @@ void RestoreHistoryStep(int index)
 }
 
 /**
- * @brief タイムラインの初期化および初期アクターの解決を行います。
+ * @brief バトル開始時のアビリティ効果を指定した順序で適用します（枠組み）。
+ * @details 適用順序:
+ *   1. チーム1（味方）→ チーム2（敵）の順。
+ *   2. チーム内はスロット順（Slot1 → 5）で1体ずつ。
+ *   3. 同一ユニットのパッシブ内は battleStartPriority 降順
+ *     （効果値変化系 1 / その他 0。バフ効果量のため）。
+ *   - 対象はタイムライン上のユニットのみ（戦闘不能・空スロットはスキップ）。
+ *   - SPD系効果の適用1回につき nextTurnOrderPriority() を呼び出し、効果の
+ *     対象にその時点でのPriority値を与える）。
+ * 現状の実装内容は適用ループと接続点のみ。効果データ（アビリティの Effect列・
+ * 対象範囲・battleStartPriority）の取得手段が未実装のため、適用処理そのものは
+ * 状態エンジン実装時に下記 TODO へ接続する（現時点で挙動変化なし）。
+ * 初期整列は後続の sortTimeline() が担保する。
  */
-void InitTimeline()
+static void applyBattleStartAbility()
 {
+    // チーム1（味方）→ チーム2（敵）。チーム内はスロット順（Slot1 → 5）。
+    for (const int team : { 1, 0 })
+    {
+        for (int slotIndex = 0; slotIndex < 5; ++slotIndex)
+        {
+            const UnitStatDetails& unit = (team == 1)
+                ? g_teamState.ally[slotIndex]
+                : g_teamState.enemy[slotIndex];
+            if (unit.character.id == 0 || unit.hp <= 0)
+            {
+                continue; // 空スロットの場合スキップ
+            }
+
+            // TODO(戦闘システム): unit の戦闘開始アビリティ効果に紐づく SPD効果列を
+            // battleStartPriority 降順 stable sort で取得し、1件ずつ適用する:
+            //   1) const std::uint32_t priority = nextTurnOrderPriority(g_teamState);
+            //   2) 行動順型: shiftAVByActionOrder(unit, rate, priority)
+            //      SPD統計型: rescaleAVBySpeed(unit, calcTotalSPD(unit))
+            //   3) relocateTimelineNode(team, slotIndex) で整列へ反映
+            // ゼロ変化（表示SPDが変わらない再付与）でも priority は発行・スタンプされる。
+        }
+    }
+}
+
+/**
+ * @brief タイムラインの初期化および初期Actorの解決を行います。
+ * @details バトル開始時の処理順序:
+ *  1) 全ユニットのAVを setTurnAVで計算、Priority 0
+ *  2) TL 構築
+ *  3) バトル開始時アビリティ効果の適用
+ *  4) 初期整列
+ *  5) shiftNextTurn: 全員から TL 先頭の AV を引き、先頭を Actor とする。
+ */
+void initTimeline()
+{
+	
+	// TL・行動履歴等 をクリア。
+	// TODO: formationView時にファイル読み込みで、履歴を再現する処理の追加 (優先度低)
     g_timeline.clear();
+    // 追加行動を考慮した確保
+    g_timeline.reserve(16);
     g_actionLog.clear();
     g_actorTeam = -1;
     g_actorSlot = -1;
@@ -381,81 +605,69 @@ void InitTimeline()
     g_selectedTargetSlot = -1;
 	g_accumTime = 0.0f;
 
-    // 敵チーム (team=0, tp=1~5)
-    for (int i = 0; i < 5; ++i)
+    // ノード構築（敵チーム team=0、味方チーム team=1。空スロット・HP0を除外）
+    for (int team = 0; team < 2; ++team)
     {
-        const UnitStatDetails& slot = g_teamState.enemy[i];
-        if (slot.character.id != 0 && slot.hp > 0)
+        for (int i = 0; i < 5; ++i)
         {
-            TimelineNode node;
-            node.team = 0;
-            node.slotIndex = i;
-            node.tp = i + 1;
-            node.id = slot.character.id;
-            node.name = slot.character.name;
-            node.spd = slot.character.spd;
-            node.av = 10000.0f / static_cast<float>(node.spd);
-            g_timeline.push_back(node);
+            const UnitStatDetails& slot =
+                (team == 0) ? g_teamState.enemy[i] : g_teamState.ally[i];
+            if (slot.character.id != 0 && slot.hp > 0)
+            {
+                TimelineNode node{};
+                node.team = team;
+                node.slotIndex = i;
+                g_timeline.push_back(node);
+            }
         }
     }
 
-    // 味方チーム (team=1, tp=6~10)
-    for (int i = 0; i < 5; ++i)
+    // バトル開始時の初期AV（Priority 0、AV = TurnAV）
+    for (const TimelineNode& node : g_timeline)
     {
-        const UnitStatDetails& slot = g_teamState.ally[i];
-        if (slot.character.id != 0 && slot.hp > 0)
-        {
-            TimelineNode node;
-            node.team = 1;
-            node.slotIndex = i;
-            node.tp = i + 6;
-            node.id = slot.character.id;
-            node.name = slot.character.name;
-            node.spd = slot.character.spd;
-            node.av = 10000.0f / static_cast<float>(node.spd);
-            g_timeline.push_back(node);
-        }
+        UnitStatDetails& unit = (node.team == 1)
+            ? g_teamState.ally[node.slotIndex]
+            : g_teamState.enemy[node.slotIndex];
+        setTurnAV(unit);
     }
 
-    // 初期ソート
-    SortTimeline();
+    applyBattleStartAbility();
 
-    // min AV を減算して先頭の Actor を決定
+    sortTimeline();
+
+    // minAV を減算して先頭の Actor を決定
     if (!g_timeline.empty())
     {
-        const float minAV = g_timeline[0].av;
-        for (auto& node : g_timeline)
-        {
-            node.av -= minAV;
-        }
+        const float minAV = resolveUnitAV(g_teamState,
+            g_timeline[0].team, g_timeline[0].slotIndex);
+        shiftNextTurn(minAV);
         g_actorTeam = g_timeline[0].team;
         g_actorSlot = g_timeline[0].slotIndex;
-		g_accumTime += minAV;
     }
     // 履歴を初期化 — 初期状態のスナップショットを保存
     g_historySequence.clear();
 	g_historyActions.clear();
     g_historyIndex = 0;
-    CaptureSnapshot();
+    captureSnapshot();
 }
 
 /**
  * @brief 履歴を1ステップ前に巻き戻します（Undo）。
  */
-void BackupTurn()
+void backupTurn()
 {
     if (g_historyIndex <= 0)
     {
         return;
     }
 
-    RestoreHistoryStep(g_historyIndex - 1);
+    restoreHistoryStep(g_historyIndex - 1);
 }
 
 /**
  * @brief 履歴を1ステップ進めます（Redo）。
  */
-void ForwardTurn()
+void forwardTurn()
 {
     const int lastIndex =
         static_cast<int>(g_historySequence.size()) - 1;
@@ -465,13 +677,13 @@ void ForwardTurn()
         return;
     }
 
-    RestoreHistoryStep(g_historyIndex + 1);
+    restoreHistoryStep(g_historyIndex + 1);
 }
 
 /**
  * @brief スキル実行およびターゲット選択を伴い、履歴を記録・分岐してターンを進めます。
  */
-void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
+void proceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
 {
     // 現段階で実行できるSkillTypeはBAとBS。
     if (skillType != SkillType::BA && skillType != SkillType::BS) return;
@@ -507,7 +719,7 @@ void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
             nextAction.targetTeam == targetTeam &&
             nextAction.targetSlot == targetSlot)
         {
-            RestoreHistoryStep(g_historyIndex + 1);
+            restoreHistoryStep(g_historyIndex + 1);
             return;
         }
     }
@@ -535,7 +747,7 @@ void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
     g_selectedTargetTeam = targetTeam;
     g_selectedTargetSlot = targetSlot;
 
-    ProceedTurn(
+    proceedTurn(
         skillType,
         g_actorTeam,
         g_actorSlot,
@@ -550,8 +762,8 @@ void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
         targetSlot
     });
 
-    // ProceedTurn() 実行後の状態を保存
-    CaptureSnapshot();
+    // ターンを進行させた後の状態を保存
+    captureSnapshot();
 
     // 最新の状態へ移動
     g_historyIndex =
@@ -561,22 +773,19 @@ void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
 /**
  * @brief ターンを1回分進行させ、スキル実行・AV更新・ログ記録を行います。
  */
-static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot)
+static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot)
 {
     if (g_timeline.empty()) return;
 
-    // Actor の名前と Target の名前を取得
-    const char* actorName = nullptr;
-    int actorSpd = 1;
-    for (const auto& node : g_timeline)
-    {
-        if (node.team == actorTeam && node.slotIndex == actorSlot)
-        {
-            actorName = node.name;
-            actorSpd = node.spd;
-            break;
-        }
-    }
+    UnitStatDetails& actor = (actorTeam == 1)
+        ? g_teamState.ally[actorSlot]
+        : g_teamState.enemy[actorSlot];
+
+    // 行動開始時の AV を計算し、TL に挿入する。
+    setTurnAV(actor);
+    relocateTimelineNode(actorTeam, actorSlot);
+
+    const char* actorName = actor.character.name;
 
     const char* targetName = nullptr;
     if (targetTeam == 0)
@@ -593,14 +802,15 @@ static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
     if (actorName == nullptr) actorName = "Unknown";
     if (targetName == nullptr) targetName = "Unknown";
 
+	// [DEBUG]
     // BA/BS実行前処理：SPを+1（上限6）、ActorのMPを+15。
-    UnitStatDetails& actor = (actorTeam == 1)
-        ? g_teamState.ally[actorSlot]
-        : g_teamState.enemy[actorSlot];
-    g_teamState.sp = std::min(g_teamState.sp + 1, 6);
+    // SPは陣営ごとに独立し、Actorの陣営のSPだけを進める。
+    const int actorTeamIndex = (actorTeam == 1) ? 1 : 0;
+    g_teamState.sp[actorTeamIndex] = std::min(g_teamState.sp[actorTeamIndex] + 1, 6);
     actor.currentMP += 15;
 
-    // ActorのキオクID・ML・BAレベルからProcess IDを生成。
+    // ActorのキオクID・魔力解放からProcess IDを生成。
+	// TODO: formation -> simulation移行時にこのID生成をしておく。
     // SkillTypeに対応する共有デバッグProcessを実行。
     // BA/BS/SAのProcess定義はそれぞれ1つずつ登録され、スロットごとに複製しない。
     bool allySlotOccupied[5]{};
@@ -623,11 +833,11 @@ static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
         false
     };
     effectContext.hpContext = &g_teamState;
-    effectContext.resolveTargetHP = &ResolveTargetHP;
-    effectContext.onDamageApplied = &HandleDamageApplied;
+    effectContext.resolveTargetHP = &resolveTargetHP;
+    effectContext.onDamageApplied = &handleDamageApplied;
     effectContext.actorBaseAtk = actor.atk;
     effectContext.actorTotalAtk = static_cast<float>(actor.atk);
-    effectContext.resolveTargetDef = &ResolveTargetDef;
+    effectContext.resolveTargetDef = &resolveTargetDef;
     ProcessId processId = DEBUG_PROCESS_BA_ID;
     switch (skillType)
     {
@@ -652,7 +862,7 @@ static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
                     static_cast<unsigned int>(processId));
     }
 
-    // Action Log に記録 (スロット位置形式: A1~A5, E1~E5、先頭に累積時刻 t を付加)
+    // 行動履歴 に記録 (スロット位置形式: A1~A5, E1~E5、先頭に累積時刻 t を付加)
     char logEntry[128];
     char actorSlotStr[16], targetSlotStr[16];
     if (actorTeam == 1) {
@@ -668,37 +878,20 @@ static void ProceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
     const char* skillTypeName =
         (skillType == SkillType::SA) ? "SA" :
         (skillType == SkillType::BS) ? "BS" : "BA";
-    // 表示用時刻は小数第3位以下を切り捨てる（四捨五入しない）。
-    // float の小数表現誤差で 68.27f が 68.269996... となる場合を考慮し、
-    // float の半ULP程度を補正してから小数第2位で切り捨てる。
-    const double truncatedTime =
-        std::floor((static_cast<double>(g_accumTime) + 0.000004) * 100.0) / 100.0;
+    // 表示用時刻は小数第3位以下を切り捨てる。
+    const float truncatedTime = std::floor(g_accumTime * 100.0f) / 100.0f;
     std::snprintf(logEntry, sizeof(logEntry), "%s%s, %s (t = %.2f)", actorSlotStr, targetSlotStr, skillTypeName, truncatedTime);
     g_actionLog.push_back(logEntry);
 
-    // Actor の AV を 10000/spd に更新
-    for (auto& node : g_timeline)
-    {
-        if (node.team == actorTeam && node.slotIndex == actorSlot)
-        {
-            node.av = 10000.0f / static_cast<float>(actorSpd);
-            break;
-        }
-    }
-
-    // ソート
-    SortTimeline();
-
-    // 次の Actor を決定 (min AV 減算)
+    // 次の Actor を決定する。
+    // Process 実行中の死亡処理・行動順/SPD効果は AV と Priority を更新するため、
+    // ここでの残処理は shiftNextTurn（減算＋全体ソート）のみ。先頭の AV
+    // と同じ値を全員から引き、その後の TL の表示値が確定する。
     if (!g_timeline.empty())
     {
-        const float minAV = g_timeline[0].av;
-        g_accumTime += minAV;
-        for (auto& node : g_timeline)
-        {
-            node.av -= minAV;
-        }
-        g_timeline[0].av = 0.0f;
+        const float nextAV = resolveUnitAV(g_teamState,
+            g_timeline[0].team, g_timeline[0].slotIndex);
+        shiftNextTurn(nextAV);
         g_actorTeam = g_timeline[0].team;
         g_actorSlot = g_timeline[0].slotIndex;
     }

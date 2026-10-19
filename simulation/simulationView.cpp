@@ -109,9 +109,9 @@ static int g_lastAutoScrollHistoryIndex = -1;
 /**
  * @brief UI側の初期化ラッパー関数。
  */
-void SetSimulationTeamState(const TeamState& state)
+void setSimulationTeamState(const TeamState& state)
 {
-    SetSimulationTeamStateLogic(state);
+    setSimulationTeamStateLogic(state);
     g_actionLogScrollY = 0.0f;
     g_lastAutoScrollHistoryIndex = -1;
 }
@@ -124,7 +124,7 @@ void SetSimulationTeamState(const TeamState& state)
 /**
  * @brief 戦闘シミュレーション画面を描画し、フレーム更新を行います。
  */
-SceneType RenderSimulationScene()
+SceneType renderSimulationScene()
 {
     SceneType next_scene = SceneType::Simulation;
 
@@ -169,7 +169,7 @@ SceneType RenderSimulationScene()
     // SkillType パネルをクリックした場合と同じ切替関数を使い、SA は選択対象にしない。
     if (ImGui::IsKeyPressed(ImGuiKey_Tab, false))
     {
-        ToggleCurrentSkillType();
+        toggleCurrentSkillType();
     }
 
     // 背景矩形を描画（domain1-4 の NoBackground を上書きする）
@@ -260,13 +260,13 @@ SceneType RenderSimulationScene()
             // text_x = icon_x + TIMELINE_ICON_SIZE + 6.0f = (panel_min.x + 4.0f) + 32.0f + 6.0f = panel_min.x + 42.0f
             constexpr float ACCUM_TIME_VALUE_X_OFFSET = 42.0f;
             char time_text[64];
-            std::snprintf(time_text, sizeof(time_text), "t = %.9f", GetAccumTime());
+            std::snprintf(time_text, sizeof(time_text), "t = %.9f", getAccumTime());
             const float time_y = panel_min.y + ACCUM_TIME_MARGIN_TOP;
             // "t = " の部分を描画（左揃え）
             draw_list->AddText(ImVec2(panel_min.x + 20.0f, time_y), IM_COL32(0, 0, 0, 255), "t = ");
             // 数値部分を描画（AV テキストの x 座標と揃える）
             char time_value[64];
-            std::snprintf(time_value, sizeof(time_value), "%.9f", GetAccumTime());
+            std::snprintf(time_value, sizeof(time_value), "%.9f", getAccumTime());
             draw_list->AddText(ImVec2(panel_min.x + ACCUM_TIME_VALUE_X_OFFSET, time_y), IM_COL32(0, 0, 0, 255), time_value);
         }
 
@@ -285,9 +285,14 @@ SceneType RenderSimulationScene()
 
             ImageManager& imageManager = ImageManager::GetInstance();
 
-            for (size_t i = 0; i < GetTimeline().size(); ++i)
+            for (size_t i = 0; i < getTimeline().size(); ++i)
             {
-                const TimelineNode& node = GetTimeline()[i];
+                const TimelineNode& node = getTimeline()[i];
+                // ゲージ等の実体は UnitStatDetails 側に一元管理されているため、参照を取得する。
+                const TeamState& team_state = getSimulationTeamState();
+                const UnitStatDetails& node_unit = (node.team == 1)
+                    ? team_state.ally[node.slotIndex]
+                    : team_state.enemy[node.slotIndex];
                 const float item_y = panel_min.y + TIMELINE_START_OFFSET + static_cast<float>(i) * TIMELINE_ITEM_HEIGHT;
 
                 // アイテムの高さが panel_max.y を超える場合は描画しない
@@ -297,7 +302,7 @@ SceneType RenderSimulationScene()
                 const float icon_y = item_y + (TIMELINE_ITEM_HEIGHT - TIMELINE_ICON_SIZE) * 0.5f;
 
                 // Actor かどうかで背景色を変更
-                const bool isActor = (GetActorTeam() == node.team && GetActorSlot() == node.slotIndex);
+                const bool isActor = (getActorTeam() == node.team && getActorSlot() == node.slotIndex);
                 if (isActor)
                 {
                     draw_list->AddRectFilled(
@@ -308,7 +313,7 @@ SceneType RenderSimulationScene()
                 }
 
                 // ユニットの小さなアイコンを描画
-                const GLuint unit_texture = imageManager.GetTexture(node.id);
+                const GLuint unit_texture = imageManager.GetTexture(node_unit.character.id);
                 if (unit_texture != 0)
                 {
                     draw_list->AddImage(
@@ -336,7 +341,7 @@ SceneType RenderSimulationScene()
                 const float text_x = icon_x + TIMELINE_ICON_SIZE + 6.0f;
 				const float text_y = item_y + (TIMELINE_ITEM_HEIGHT - 14.0f) * 0.5f;
 
-                // Actor は "Actor" テキストを表示、それ以外は AV を表示
+                // Actor は "Actor" テキストを表示、それ以外は AV の 小数第10位までの値を表示
                 if (isActor)
                 {
 					const char* actor_text = "Actor";
@@ -349,7 +354,8 @@ SceneType RenderSimulationScene()
                 }
                 else
                 {
-                    char av_text[64];
+					// 一部の数値を、それが正確であることを示す整形を行う: 15.00 -> 15
+                    char av_text[32];
                     std::snprintf(av_text, sizeof(av_text), "%.10f", static_cast<double>(node.av));
                     char* decimal_point = std::strchr(av_text, '.');
                     if (decimal_point != nullptr)
@@ -505,7 +511,7 @@ SceneType RenderSimulationScene()
                 slot_y + SIM_SLOT_SIZE * 0.5f
             );
 
-            const UnitStatDetails& slotData = GetSimulationTeamState().enemy[slot_index];
+            const UnitStatDetails& slotData = getSimulationTeamState().enemy[slot_index];
             const bool has_unit = (slotData.character.id != 0);
 
             if (has_unit)
@@ -531,7 +537,7 @@ SceneType RenderSimulationScene()
                 }
 
                 // Actor の場合、緑の強調リングを描画
-                if (GetActorTeam() == 0 && GetActorSlot() == slot_index)
+                if (getActorTeam() == 0 && getActorSlot() == slot_index)
                 {
                     const float ring_radius = SIM_SLOT_SIZE * 0.5f;
                     draw_list->AddCircle(
@@ -593,7 +599,7 @@ SceneType RenderSimulationScene()
                 slot_y + SIM_SLOT_SIZE * 0.5f
             );
 
-            const UnitStatDetails& slotData = GetSimulationTeamState().ally[i];
+            const UnitStatDetails& slotData = getSimulationTeamState().ally[i];
             const bool has_unit = (slotData.character.id != 0);
 
             if (has_unit)
@@ -619,7 +625,7 @@ SceneType RenderSimulationScene()
                 }
 
                 // Actor の場合、緑の強調リングを描画
-                if (GetActorTeam() == 1 && GetActorSlot() == i)
+                if (getActorTeam() == 1 && getActorSlot() == i)
                 {
                     const float ring_radius = SIM_SLOT_SIZE * 0.5f;
                     draw_list->AddCircle(
@@ -706,7 +712,7 @@ SceneType RenderSimulationScene()
             1.0f
         );
 
-        const SkillType selected = GetCurrentSkillType();
+        const SkillType selected = getCurrentSkillType();
         const SkillType row_types[] = { SkillType::BA, SkillType::BS, SkillType::SA };
         const char* row_labels[] = { "BA", "BS", "SA" };
         const ImGuiIO& io = ImGui::GetIO();
@@ -772,7 +778,7 @@ SceneType RenderSimulationScene()
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
                     row_types[i] != selected)
                 {
-                    ToggleCurrentSkillType();
+                    toggleCurrentSkillType();
                 }
             }
         }
@@ -808,15 +814,15 @@ SceneType RenderSimulationScene()
                 // 画面上の左から i 番目に対応する内部スロット。内部順序は変更しない。
                 const int slot_index = SIM_SLOT_COUNT - 1 - i;
                 const float slot_x = slots_start_x + i * SIM_SLOT_PITCH;
-                if (GetSimulationTeamState().enemy[slot_index].character.id != 0 &&
-                    GetSimulationTeamState().enemy[slot_index].hp > 0)
+                if (getSimulationTeamState().enemy[slot_index].character.id != 0 &&
+                    getSimulationTeamState().enemy[slot_index].hp > 0)
                 {
                     const bool hovered =
                         mouse_x >= slot_x && mouse_x <= slot_x + SIM_SLOT_SIZE &&
                         mouse_y >= slot_y && mouse_y <= slot_y + SIM_SLOT_SIZE;
 
                     // Actor が味方 (team=1) の場合、敵スロットはターゲット候補
-                    if (hovered && within_domain1 && GetActorTeam() == 1 && GetActorSlot() >= 0)
+                    if (hovered && within_domain1 && getActorTeam() == 1 && getActorSlot() >= 0)
                     {
                         const ImVec2 slot_center(slot_x + SIM_SLOT_SIZE * 0.5f, slot_y + SIM_SLOT_SIZE * 0.5f);
                         const float ring_radius = SIM_SLOT_SIZE * 0.5f;
@@ -829,14 +835,14 @@ SceneType RenderSimulationScene()
                         );
 
                         // BS（Proximity）の場合、対象の左右に隣接する占有スロットを薄い色で強調。
-                        if (GetCurrentSkillType() == SkillType::BS)
+                        if (getCurrentSkillType() == SkillType::BS)
                         {
                             constexpr ImU32 PROXIMITY_HOVER_COLOR = IM_COL32(125, 225, 235, 248);
                             for (const int adjacent_slot : { slot_index - 1, slot_index + 1 })
                             {
                                 if (adjacent_slot < 0 || adjacent_slot >= SIM_SLOT_COUNT ||
-                                    GetSimulationTeamState().enemy[adjacent_slot].character.id == 0 ||
-                                    GetSimulationTeamState().enemy[adjacent_slot].hp <= 0)
+                                    getSimulationTeamState().enemy[adjacent_slot].character.id == 0 ||
+                                    getSimulationTeamState().enemy[adjacent_slot].hp <= 0)
                                 {
                                     continue;
                                 }
@@ -859,7 +865,7 @@ SceneType RenderSimulationScene()
                         const bool clicked = hovered && within_domain1 && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
                         if (clicked)
                         {
-                            ProceedTurnWithHistory(GetCurrentSkillType(), 0, slot_index);
+                            proceedTurnWithHistory(getCurrentSkillType(), 0, slot_index);
                         }
                     }
                 }
@@ -873,15 +879,15 @@ SceneType RenderSimulationScene()
             for (int i = 0; i < SIM_SLOT_COUNT; ++i)
             {
                 const float slot_x = slots_start_x + i * SIM_SLOT_PITCH;
-                if (GetSimulationTeamState().ally[i].character.id != 0 &&
-                    GetSimulationTeamState().ally[i].hp > 0)
+                if (getSimulationTeamState().ally[i].character.id != 0 &&
+                    getSimulationTeamState().ally[i].hp > 0)
                 {
                     const bool hovered =
                         mouse_x >= slot_x && mouse_x <= slot_x + SIM_SLOT_SIZE &&
                         mouse_y >= slot_y && mouse_y <= slot_y + SIM_SLOT_SIZE;
 
                     // Actor が敵 (team=0) の場合、味方スロットはターゲット候補
-                    if (hovered && within_domain1 && GetActorTeam() == 0 && GetActorSlot() >= 0)
+                    if (hovered && within_domain1 && getActorTeam() == 0 && getActorSlot() >= 0)
                     {
                         const ImVec2 slot_center(slot_x + SIM_SLOT_SIZE * 0.5f, slot_y + SIM_SLOT_SIZE * 0.5f);
                         const float ring_radius = SIM_SLOT_SIZE * 0.5f;
@@ -894,14 +900,14 @@ SceneType RenderSimulationScene()
                         );
 
                         // BS（Proximity）の場合、対象の左右に隣接する占有スロットを薄い色で強調。
-                        if (GetCurrentSkillType() == SkillType::BS)
+                        if (getCurrentSkillType() == SkillType::BS)
                         {
                             constexpr ImU32 PROXIMITY_HOVER_COLOR = IM_COL32(125, 225, 235, 248);
                             for (const int adjacent_slot : { i - 1, i + 1 })
                             {
                                 if (adjacent_slot < 0 || adjacent_slot >= SIM_SLOT_COUNT ||
-                                    GetSimulationTeamState().ally[adjacent_slot].character.id == 0 ||
-                                    GetSimulationTeamState().ally[adjacent_slot].hp <= 0)
+                                    getSimulationTeamState().ally[adjacent_slot].character.id == 0 ||
+                                    getSimulationTeamState().ally[adjacent_slot].hp <= 0)
                                 {
                                     continue;
                                 }
@@ -924,7 +930,7 @@ SceneType RenderSimulationScene()
                         const bool clicked = hovered && within_domain1 && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
                         if (clicked)
                         {
-                            ProceedTurnWithHistory(GetCurrentSkillType(), 1, i);
+                            proceedTurnWithHistory(getCurrentSkillType(), 1, i);
                         }
                     }
                 }
@@ -946,13 +952,13 @@ SceneType RenderSimulationScene()
                 draw_list,
                 slot_x,
                 ENEMY_SLOT_Y + SIM_SLOT_SIZE + HP_BAR_GAP,
-                GetSimulationTeamState().enemy[enemy_slot_index]
+                getSimulationTeamState().enemy[enemy_slot_index]
             );
             draw_hp_bar(
                 draw_list,
                 slot_x,
                 ALLY_SLOT_Y + SIM_SLOT_SIZE + HP_BAR_GAP,
-                GetSimulationTeamState().ally[i]
+                getSimulationTeamState().ally[i]
             );
         }
     }
@@ -1041,7 +1047,7 @@ SceneType RenderSimulationScene()
 			constexpr float ACTION_LOG_TEXT_MARGIN_X = 14.0f;
 
 			const int log_count =
-				static_cast<int>(GetActionLog().size());
+				static_cast<int>(getActionLog().size());
 
 			// -------------------------------------------------------
 			// actionLog_panel 内のログ表示領域
@@ -1135,12 +1141,12 @@ SceneType RenderSimulationScene()
 
 			if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
 			{
-				BackupTurn();
+				backupTurn();
 			}
 
 			if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
 			{
-				ForwardTurn();
+				forwardTurn();
 			}
 
 			// ---------------------------------------------------
@@ -1189,10 +1195,10 @@ SceneType RenderSimulationScene()
 					clicked_log_index >= 0 &&
 					clicked_log_index < log_count &&
 					clicked_history_index <
-						static_cast<int>(GetHistoryCount())
+						static_cast<int>(getHistoryCount())
 				)
 				{
-					RestoreHistoryStep(clicked_history_index);
+					restoreHistoryStep(clicked_history_index);
 				}
 			}
 
@@ -1216,15 +1222,15 @@ SceneType RenderSimulationScene()
 			float next_scroll_y = current_scroll_y;
 
 			const int current_log_index =
-				GetHistoryIndex() - 1;
+				getHistoryIndex() - 1;
 
 			if (
 				previous_history_index >= 0 &&
-				GetHistoryIndex() != previous_history_index
+				getHistoryIndex() != previous_history_index
 			)
 			{
 				const int direction =
-					GetHistoryIndex() < previous_history_index ? -1 : 1;
+					getHistoryIndex() < previous_history_index ? -1 : 1;
 
 				if (current_log_index < 0)
 				{
@@ -1291,7 +1297,7 @@ SceneType RenderSimulationScene()
 			const bool request_scroll =
 				std::fabs(next_scroll_y - current_scroll_y) > 0.01f;
 
-			g_lastAutoScrollHistoryIndex = GetHistoryIndex();
+			g_lastAutoScrollHistoryIndex = getHistoryIndex();
 
 			ImGui::SetCursorScreenPos(content_min);
 			
@@ -1375,7 +1381,7 @@ SceneType RenderSimulationScene()
  						log_draw_list->AddText(
  							ImVec2(log_row_x, text_y),
  							IM_COL32(0, 0, 0, 255),
- 							GetActionLog()[i].c_str()
+ 							getActionLog()[i].c_str()
  						);
  					}
 

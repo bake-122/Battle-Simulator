@@ -332,7 +332,7 @@ int main()
 	// =========================================================
 
 	FormationView formationView;
-	formationView.Initialize();
+	formationView.initialize();
 	
 	SceneType current_scene = SceneType::Formation;
 
@@ -359,12 +359,12 @@ int main()
 		switch (current_scene)
 		{
 		case SceneType::Formation:
-			formationView.Update();
-			current_scene = formationView.Draw();
+			formationView.update();
+			current_scene = formationView.draw();
 			break;
 
 		case SceneType::Simulation:
-			current_scene = RenderSimulationScene();
+			current_scene = renderSimulationScene();
 			break;
 		}
 		

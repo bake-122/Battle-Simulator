@@ -21,39 +21,44 @@
  */
 struct UnitStatDetails
 {
-    Character character{};   /**< キオクの静的データ */
-    int hp = 0;              /**< 現在HP */
-    int maxHP = 0;           /**< 戦闘開始時の最大HP */
-    int atk = 0;             /**< 攻撃力 */
-    int def = 0;             /**< 防御力 */
-    int currentMP = 0;       /**< 現在MP */
-    int currentBP = 0;       /**< BPを使用するキオク用。現時点ではゲージ処理未実装。 */
-    int magicLevel = 140;    /**< 魔力解放レベル */
-    float av = 0.0f;         /**< Action Value（行動値） */
+	Character character{};	/**< キオクの静的データ */
+	int hp = 0;				/**< 現在HP */
+	int maxHP = 0;			/**< 戦闘開始時の最大HP */
+	int atk = 0;			/**< 攻撃力 */
+	int def = 0;			/**< 防御力 */
+	int currentMP = 0;		/**< 現在MP */
+	int currentBP = 0;		/**< BPを使用するキオク用。現時点ではゲージ処理未実装。 */
+
+	// ------------------------------------------------------------
+	// タイムラインに関するメンバー
+	// ------------------------------------------------------------
+
+	float av = 0.0f;					/**< 行動値 (Action Value) */
+	float totalSPD = 0.0f;				/**< ゲージ基準の総SPD（setTurnAV / rescaleAVBySpeed で更新） */
+	std::uint32_t turnPriority = 0;		/**< av が同値になったときのターン優先度（値が大きいほどTL先頭） */
 };
 
 /**
- * @brief 戦闘全体のチーム状態（味方・敵・共有SP）。
+ * @brief 戦闘全体のチーム状態（味方・敵・陣営別SP）。
  */
 struct TeamState
 {
-    std::array<UnitStatDetails, 5> ally{};   /**< 味方5枠 */
-    std::array<UnitStatDetails, 5> enemy{};  /**< 敵5枠 */
-    int sp = 5;                              /**< パーティ共有SP（初期値5、範囲0～6） */
+	std::array<UnitStatDetails, 5> ally{};	/**< 味方5枠 */
+	std::array<UnitStatDetails, 5> enemy{};	/**< 敵5枠 */
+	int sp[2] = {5, 5};						/**< 陣営別共有SP（添字=チームID: [0]=enemy, [1]=ally。初期値5、範囲0～6） */
+	std::uint32_t nextTurnPriority = 0;		/**< 次に発行するターン優先権番号 */
 };
 
 /**
  * @brief タイムライン上の1ノードを表す構造体。
+ * @details ノードは整列順（(team, slotIndex) の参照ペア）のみを保持し、AV等の
+ *		  実体は UnitStatDetails 側に一元管理する。
+ *		  整列は simulationLogic の compareTurnOrder（AV/turnPriority/チーム/スロットの4キー）が担う。
  */
 struct TimelineNode
 {
-    int team;          /**< チーム（0 = enemy, 1 = ally） */
-    int slotIndex;     /**< スロットインデックス（0～4） */
-    int tp;            /**< ターン優先度（enemy: 1～5, ally: 6～10） */
-    int id;            /**< キオクID */
-    const char* name;  /**< キオク名 */
-    int spd;           /**< 速度 */
-    float av;          /**< 行動値（Action Value） */
+	int team;		  /**< チーム（0 = enemy, 1 = ally） */
+	int slotIndex;	 /**< スロットインデックス（0～4） */
 };
 
 /**
@@ -61,97 +66,141 @@ struct TimelineNode
  */
 enum class SkillType : std::uint8_t
 {
-    SA = 0,       /**< Special Attack（必殺技） */
-    BS = 1,       /**< Battle Skill */
-    BA = 2,       /**< Basic Attack（通常攻撃） */
-    Ability = 3   /**< アビリティ */
+	SA = 0,	   /**< Special Attack（必殺技） */
+	BS = 1,	   /**< Battle Skill （戦闘スキル）*/
+	BA = 2,	   /**< Basic Attack（通常攻撃） */
+	Ability = 3   /**< アビリティ */
 };
 
 /**
  * @brief 現在のチーム状態への参照を取得します。
  * @return チーム状態へのconst参照。
  */
-const TeamState& GetSimulationTeamState();
+const TeamState& getSimulationTeamState();
 
 /**
  * @brief ロジック側のチーム状態を設定・初期化します。
  * @param state 設定するチーム状態。
  */
-void SetSimulationTeamStateLogic(const TeamState& state);
+void setSimulationTeamStateLogic(const TeamState& state);
 
 /**
  * @brief 現在のタイムラインを取得します。
  * @return タイムラインノード配列へのconst参照。
  */
-const std::vector<TimelineNode>& GetTimeline();
+const std::vector<TimelineNode>& getTimeline();
 
 /**
  * @brief アクションログ一覧を取得します。
  * @return ログ文字列配列へのconst参照。
  */
-const std::vector<std::string>& GetActionLog();
+const std::vector<std::string>& getActionLog();
 
 /**
- * @brief 現在のアクターのチームを取得します。
- * @return アクターのチーム番号（0 = enemy, 1 = ally）。
+ * @brief 現在のActorのチームを取得します。
+ * @return Actorのチーム番号（0 = enemy, 1 = ally）。
  */
-int GetActorTeam();
+int getActorTeam();
 
 /**
- * @brief 現在のアクターのスロットインデックスを取得します。
+ * @brief 現在のActorのスロットインデックスを取得します。
  * @return スロットインデックス（0～4）。
  */
-int GetActorSlot();
+int getActorSlot();
 
 /**
  * @brief 戦闘開始からの累積時間を取得します。
  * @return 累積時間（float）。
  */
-float GetAccumTime();
+float getAccumTime();
+
+// -----------------------------------------------------------
+// AV・SPD 処理。
+// SPD・AO(行動順)効果を実装する際は必ずこれらの関数経由でAVを操作する。
+// -----------------------------------------------------------
+
+/**
+ * @brief ユニットの現在のtotalSPDを計算します。
+ * @details [現行: SPD効果の状態未実装] 基礎SPDのみを返す。
+ *			原則2パス合成（加算的効果を基礎値へ適用順に反映し、続いて
+ *			乗算的効果を合計値へ適用順に反映する。）でtotalSPDを計算し、
+ *			最後に float へ変換する。状態エンジン実装時にこの関数を置換する。
+ */
+float calcTotalSPD(const UnitStatDetails& unit);
+
+/**
+ * @brief AVにその時点でのTurnAVを代入します（TL初期化 / 行動開始時のAV計算）。
+ * @details calcTotalSPD -> turnPriority = 0; -> av = 10000 / totalSPD の順で処理する。
+ *			AV値が同じノードが既にTLに存在するとき、そのノードより後方に配置される。
+ */
+void setTurnAV(UnitStatDetails& unit);
+
+/**
+ * @brief SPD変化時のAV再スケールを行います。
+ * @details SPDに何も変化がなければ何も処理しない。また、
+ *          Priority の更新はこの関数では行わない（効果適用側で
+ *          nextTurnOrderPriority() を呼ぶ）。
+ */
+void rescaleAVBySpeed(UnitStatDetails& unit, float newSPD);
+
+/**
+ * @brief 行動順上昇/減少効果（AA/AD）によるAV更新を行います。
+ * @details turnAVを求め、それの割合 rate を対象の AV に加え、0との最大値をとる。
+ *          行動順上昇は rate < 0、行動順減少は rate > 0。
+ *          rate と priority は各効果適用につき1度だけ計算し、全対象で同一の値を使う。
+ */
+void shiftAVByActionOrder(UnitStatDetails& unit, float rate, std::uint32_t priority);
+
+/**
+ * @brief 次のターン優先権番号を発行します。
+ * @details 効果適用1回につき1度発行する。発行した値を、その効果の対象に
+ *          与える（AVが変わりえない効果では呼ばれない）。
+ */
+std::uint32_t nextTurnOrderPriority(TeamState& team);
 
 /**
  * @brief 現在の履歴インデックスを取得します。
  * @return 履歴インデックス。
  */
-int GetHistoryIndex();
+int getHistoryIndex();
 
 /**
  * @brief 保存されている履歴総数を取得します。
  * @return 履歴数。
  */
-int GetHistoryCount();
+int getHistoryCount();
 
 /**
  * @brief 現在選択されているスキル種別を取得します。
  * @return 選択中のSkillType。
  */
-SkillType GetCurrentSkillType();
+SkillType getCurrentSkillType();
 
 /**
  * @brief 現在選択されているスキル種別を切り替えます（BA <-> BS）。
  */
-void ToggleCurrentSkillType();
+void toggleCurrentSkillType();
 
 /**
- * @brief タイムラインの初期化および初期アクターの解決を行います。
+ * @brief タイムラインの初期化および初期Actorの解決を行います。
  */
-void InitTimeline();
+void initTimeline();
 
 /**
  * @brief 履歴を1ステップ前に巻き戻します（Undo）。
  */
-void BackupTurn();
+void backupTurn();
 
 /**
  * @brief 履歴を1ステップ進めます（Redo）。
  */
-void ForwardTurn();
+void forwardTurn();
 
 /**
  * @brief 指定したインデックスの履歴ステップへ復元します。
  * @param index 復元する履歴インデックス。
  */
-void RestoreHistoryStep(int index);
+void restoreHistoryStep(int index);
 
 /**
  * @brief スキル実行およびターゲット選択を伴い、履歴を記録・分岐してターンを進めます。
@@ -159,6 +208,6 @@ void RestoreHistoryStep(int index);
  * @param targetTeam 対象チーム（0 = enemy, 1 = ally）。
  * @param targetSlot 対象スロットインデックス（0～4）。
  */
-void ProceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot);
+void proceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot);
 
 #endif // SIMULATION_LOGIC_HPP
