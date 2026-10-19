@@ -356,7 +356,7 @@ SceneType renderSimulationScene()
                 {
 					// 一部の数値を、それが正確であることを示す整形を行う: 15.00 -> 15
                     char av_text[32];
-                    std::snprintf(av_text, sizeof(av_text), "%.10f", static_cast<double>(node.av));
+                    std::snprintf(av_text, sizeof(av_text), "%.10f", node_unit.av);
                     char* decimal_point = std::strchr(av_text, '.');
                     if (decimal_point != nullptr)
                     {
