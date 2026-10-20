@@ -1864,6 +1864,18 @@ inline constexpr std::array<Character, 128> Kioku_data = {
  */
 inline constexpr std::array<std::pair<int, int>, 2> BP_Kioku_List = {{ { 1005, 12 }, { 2008, 15 } }};
 
+/**
+ * @brief BP_Kioku_Listから指定キオクIDの最大BPを取得する
+ * @param id キオクID
+ * @return 登録済みならその最大BP、未登録なら0
+ */
+inline int getMaxBP(int id) {
+    for (const auto& entry : BP_Kioku_List) {
+        if (entry.first == id) return entry.second;
+    }
+    return 0;
+}
+
 
 /**
  * @brief 指定されたキオクIDからCharacterマスターデータを検索する

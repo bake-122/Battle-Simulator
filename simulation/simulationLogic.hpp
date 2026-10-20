@@ -27,7 +27,10 @@ struct UnitStatDetails
 	int atk = 0;			/**< 攻撃力 */
 	int def = 0;			/**< 防御力 */
 	int currentMP = 0;		/**< 現在MP */
-	int currentBP = 0;		/**< BPを使用するキオク用。現時点ではゲージ処理未実装。 */
+	int currentBP = 0;		/**< 現在BP */
+	
+	int MP = 0;				/**< 最大MP */
+	int BP = 0;				/**< 最大BP */
 
 	// ------------------------------------------------------------
 	// タイムラインに関するメンバー
@@ -178,8 +181,16 @@ SkillType getCurrentSkillType();
 
 /**
  * @brief 現在選択されているスキル種別を切り替えます（BA <-> BS）。
+ * @details 切替先が選択不可（SP0時のBS等）なら選択状態を変更しない。
  */
 void toggleCurrentSkillType();
+
+/**
+ * @brief 指定したスキル種別が現在選択可能かを返します。
+ * @details SAは常時不可。BSはActorの陣営SPが0のとき不可
+ *          （Actor未決定時はSP検査をしない）。BAは常時可。
+ */
+bool isSkillTypeSelectable(SkillType type);
 
 /**
  * @brief タイムラインの初期化および初期Actorの解決を行います。

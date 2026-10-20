@@ -824,6 +824,9 @@ SceneType FormationView::draw()
 				state.ally[i].atk = stats.atk;
 				state.ally[i].def = stats.def;
 				state.ally[i].currentMP = 0;
+				state.ally[i].currentBP = 0;
+				state.ally[i].MP = ch.mp;
+				state.ally[i].BP = getMaxBP(ch.id);
 			}
 
 			const int enemy_data_idx = enemy_slots.unit_indices[i];
@@ -836,6 +839,9 @@ SceneType FormationView::draw()
 				state.enemy[i].atk = stats.atk;
 				state.enemy[i].def = stats.def;
 				state.enemy[i].currentMP = 0;
+				state.enemy[i].currentBP = 0;
+				state.enemy[i].MP = ch.mp;
+				state.enemy[i].BP = getMaxBP(ch.id);
 			}
 		}
 

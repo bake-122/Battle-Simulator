@@ -496,6 +496,27 @@ SceneType renderSimulationScene()
                 SIM_SLOT_BG_ENEMY,
                 SIM_SLOT_BG_ROUNDING
             );
+
+            // 矩形の左上（外側）にSPを表示する。
+            constexpr float SP_TEXT_SIZE = 22.0f;
+            char sp_text[16];
+            std::snprintf(sp_text, sizeof(sp_text), "SP: %d", getSimulationTeamState().sp[0]);
+            const ImVec2 sp_text_pos(
+                slots_start_x - SIM_SLOT_BG_PAD + 4.0f,
+                slot_y - SIM_SLOT_BG_PAD - SP_TEXT_SIZE - 3.0f
+            );
+            // 背景色が下に来ないため縁取り付きで視認性を確保する（HP表示と同一方式）。
+            const ImU32 sp_text_outline = IM_COL32(0, 0, 0, 255);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x - 1.0f, sp_text_pos.y), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x + 1.0f, sp_text_pos.y), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x, sp_text_pos.y - 1.0f), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x, sp_text_pos.y + 1.0f), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE, sp_text_pos,
+                IM_COL32(255, 255, 255, 255), sp_text);
         }
 
         // Actor の緑強調リング色 (formationView の選択中スロット色と同一)
@@ -586,6 +607,26 @@ SceneType renderSimulationScene()
                 SIM_SLOT_BG_ALLY,
                 SIM_SLOT_BG_ROUNDING
             );
+
+            // 矩形の左上にSPを表示する。
+            constexpr float SP_TEXT_SIZE = 22.0f;
+            char sp_text[16];
+            std::snprintf(sp_text, sizeof(sp_text), "SP: %d", getSimulationTeamState().sp[1]);
+            const ImVec2 sp_text_pos(
+                slots_start_x - SIM_SLOT_BG_PAD + 4.0f,
+                slot_y - SIM_SLOT_BG_PAD - SP_TEXT_SIZE - 3.0f
+            );
+            const ImU32 sp_text_outline = IM_COL32(0, 0, 0, 255);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x - 1.0f, sp_text_pos.y), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x + 1.0f, sp_text_pos.y), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x, sp_text_pos.y - 1.0f), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE,
+                ImVec2(sp_text_pos.x, sp_text_pos.y + 1.0f), sp_text_outline, sp_text);
+            draw_list->AddText(nullptr, SP_TEXT_SIZE, sp_text_pos,
+                IM_COL32(255, 255, 255, 255), sp_text);
         }
 
         // Actor の緑強調リング色 (formationView の選択中スロット色と同一)
@@ -690,7 +731,8 @@ SceneType renderSimulationScene()
         const ImU32 ba_selected_color = IM_COL32(200, 230, 255, 255);
         const ImU32 bs_selected_color = IM_COL32(238, 151, 58, 255);
         [[maybe_unused]] constexpr ImU32 sa_background_color = IM_COL32(220, 70, 70, 255);
-        const ImU32 disabled_text_color = IM_COL32(145, 145, 145, 255);
+        const ImU32 disabled_text_color = IM_COL32(132, 132, 132, 255);
+		const ImU32 disabled_background_color = IM_COL32(214, 214, 214, 255);
 
         // パネル全体を先に描画し、各帯をその内側に配置する。
         draw_list->AddRectFilled(
@@ -727,16 +769,26 @@ SceneType renderSimulationScene()
             const float row_top = slot_y + SKILL_HEADER_HEIGHT + i * SKILL_ROW_HEIGHT;
             const float row_bottom = row_top + SKILL_ROW_HEIGHT;
             const bool is_selected = (selected == row_types[i]);
-            const bool is_disabled = (row_types[i] == SkillType::SA);
+            // SA は常時不可。BS は Actor の陣営 SP が 0 のとき不可。選択不可行は SA と同様にグレーアウト。
+            const bool is_disabled = !isSkillTypeSelectable(row_types[i]);
 
+            constexpr float HIGHLIGHT_INSET_X = 4.0f;
+            constexpr float HIGHLIGHT_INSET_Y = 1.0f;
+            constexpr float HIGHLIGHT_ROUNDING = 4.0f;
             // Action Log と同じく、未選択行には別のグレー背景を描かない。
             // これにより各行と外側パネルの背景色が一致し、色の段差が発生しない。
             // 選択帯は四辺をパネル内側へ inset し、外側の角丸背景からはみ出さない形にする。
-            if (is_selected && !is_disabled)
+			if (is_disabled)
+			{
+                draw_list->AddRectFilled(
+                    ImVec2(panel_min.x + HIGHLIGHT_INSET_X, row_top + HIGHLIGHT_INSET_Y),
+                    ImVec2(panel_max.x - HIGHLIGHT_INSET_X, row_bottom - HIGHLIGHT_INSET_Y),
+                    disabled_background_color,
+                    HIGHLIGHT_ROUNDING
+                );
+            }
+			else if (is_selected)
             {
-                constexpr float HIGHLIGHT_INSET_X = 4.0f;
-                constexpr float HIGHLIGHT_INSET_Y = 1.0f;
-                constexpr float HIGHLIGHT_ROUNDING = 4.0f;
                 draw_list->AddRectFilled(
                     ImVec2(panel_min.x + HIGHLIGHT_INSET_X, row_top + HIGHLIGHT_INSET_Y),
                     ImVec2(panel_max.x - HIGHLIGHT_INSET_X, row_bottom - HIGHLIGHT_INSET_Y),

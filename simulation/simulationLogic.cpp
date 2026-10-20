@@ -139,13 +139,15 @@ namespace
      */
     struct HistorySnapshot
     {
-        TeamState teamState;                       /**< チーム状態 */
-        std::vector<TimelineNode> timeline;        /**< タイムライン配列 */
-        int actorTeam = -1;                        /**< Actorのチーム */
-        int actorSlot = -1;                        /**< Actorのスロット */
-        int selectedTargetTeam = -1;               /**< 選択された対象のチーム */
-        int selectedTargetSlot = -1;               /**< 選択された対象のスロット */
-        float accumTime = 0.0f;                    /**< 累積時間 */
+        TeamState teamState;						/**< チーム状態 */
+        std::vector<TimelineNode> timeline;			/**< タイムライン配列 */
+        int actorTeam = -1;							/**< Actorのチーム */
+        int actorSlot = -1;							/**< Actorのスロット */
+        int selectedTargetTeam = -1;				/**< 選択された対象のチーム */
+        int selectedTargetSlot = -1;				/**< 選択された対象のスロット */
+        float accumTime = 0.0f;						/**< 累積時間 */
+		SkillType currentSkillType = SkillType::BA; /**< 選択した行動 */
+		
     };
 }
 
@@ -364,14 +366,31 @@ int getHistoryCount() { return static_cast<int>(g_historySequence.size()); }
 SkillType getCurrentSkillType() { return g_currentSkillType; }
 
 /**
+ * @brief 指定したスキル種別が現在選択可能かを返します。
+ * @details SAは常時不可。BSは現在のActorの陣営SPが0のとき不可
+ *          （Actor未決定時はSP検査をしない）。BAは常時可。
+ */
+bool isSkillTypeSelectable(SkillType type)
+{
+    if (type == SkillType::SA) return false;
+    if (type == SkillType::BS && g_actorTeam >= 0)
+    {
+        const int teamIndex = (g_actorTeam == 1) ? 1 : 0;
+        if (g_teamState.sp[teamIndex] <= 0) return false;
+    }
+    return true;
+}
+
+/**
  * @brief 現在選択されているスキル種別を切り替えます（BA <-> BS）。
+ * @details 切替先が選択不可（SP0時のBS等）なら選択状態を変更しない。
  */
 void toggleCurrentSkillType()
 {
-    // SA は常時選択不可。BA と BS の間だけを切り替える。
-    g_currentSkillType = (g_currentSkillType == SkillType::BA)
+    const SkillType next = (g_currentSkillType == SkillType::BA)
         ? SkillType::BS
         : SkillType::BA;
+    if (isSkillTypeSelectable(next)) g_currentSkillType = next;
 }
 
 /**
@@ -505,6 +524,7 @@ static void captureSnapshot()
     snap.selectedTargetTeam = g_selectedTargetTeam;
     snap.selectedTargetSlot = g_selectedTargetSlot;
     snap.accumTime = g_accumTime;
+	snap.currentSkillType = g_currentSkillType;
     g_historySequence.push_back(std::move(snap));
 }
 
@@ -535,6 +555,9 @@ void restoreHistoryStep(int index)
 
     // 累積時刻を復元
     g_accumTime = snap.accumTime;
+	
+	// 選択した行動を復元
+	g_currentSkillType = snap.currentSkillType;
 
     // 現在表示している状態のインデックス
     g_historyIndex = index;
@@ -604,6 +627,7 @@ void initTimeline()
     g_selectedTargetTeam = -1;
     g_selectedTargetSlot = -1;
 	g_accumTime = 0.0f;
+	g_currentSkillType = SkillType::BA;
 
     // ノード構築（敵チーム team=0、味方チーム team=1。空スロット・HP0を除外）
     for (int team = 0; team < 2; ++team)
@@ -802,12 +826,41 @@ static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
     if (actorName == nullptr) actorName = "Unknown";
     if (targetName == nullptr) targetName = "Unknown";
 
-	// [DEBUG]
-    // BA/BS実行前処理：SPを+1（上限6）、ActorのMPを+15。
+    // BA/BS実行前処理：SPとMP/BPを更新する。
     // SPは陣営ごとに独立し、Actorの陣営のSPだけを進める。
+    // BA: SP+1（上限6） / BS: SP-1（BSはActorの陣営SP>=1のときのみ選択可能）。
+    // MPキオク: BAでMP+15、BSでMP+30。BPキオク（BP>0）: BP+1、BP+2。
+    // currentMP / currentBP はそれぞれ最大値（UnitStatDetails::MP / BP）を上限とする。
     const int actorTeamIndex = (actorTeam == 1) ? 1 : 0;
-    g_teamState.sp[actorTeamIndex] = std::min(g_teamState.sp[actorTeamIndex] + 1, 6);
-    actor.currentMP += 15;
+	switch (skillType)
+	{
+		case SkillType::BA:
+			g_teamState.sp[actorTeamIndex] = std::min(g_teamState.sp[actorTeamIndex] + 1, 6);
+			if (actor.BP > 0 )
+			{
+				actor.currentBP = std::min(actor.currentBP + 1, actor.BP);
+			}
+			else
+			{
+				actor.currentMP = std::min(actor.currentMP + 15, actor.MP);
+			}
+			break;
+		
+		case SkillType::BS:
+			// 選択ゲート（isSkillTypeSelectable）でSP>=1を満たす前提
+			g_teamState.sp[actorTeamIndex] -= 1;
+			if (actor.BP > 0)
+			{
+				actor.currentBP = std::min(actor.currentBP + 2, actor.BP);
+			}
+			else
+			{
+				actor.currentMP = std::min(actor.currentMP + 30, actor.MP);
+			}
+			break;
+		default:
+			break;
+	}
 
     // ActorのキオクID・魔力解放からProcess IDを生成。
 	// TODO: formation -> simulation移行時にこのID生成をしておく。
@@ -894,6 +947,8 @@ static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
         shiftNextTurn(nextAV);
         g_actorTeam = g_timeline[0].team;
         g_actorSlot = g_timeline[0].slotIndex;
+		if (g_teamState.sp[g_timeline[0].team] <= 0)
+			g_currentSkillType = SkillType::BA;
     }
 
     // ターゲット選択をリセット
