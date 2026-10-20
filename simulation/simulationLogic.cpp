@@ -152,11 +152,10 @@ namespace
 }
 
 // ===========================================================
-// タイムライン・行動ログ
+// タイムライン
 // ===========================================================
 
 static std::vector<TimelineNode> g_timeline;
-static std::vector<std::string> g_actionLog;
 
 // 現在の Actor (タイムライン先頭)
 static int g_actorTeam = -1;     // 0=enemy, 1=ally, -1=none
@@ -169,9 +168,6 @@ static int g_selectedTargetSlot = -1;
 // 累積時刻 t (minAV 減算の累積値)
 static float g_accumTime = 0.0f;
 
-// 履歴管理
-static std::vector<HistorySnapshot> g_historySequence;
-
 /**
  * @brief 各履歴ステップで実行された行動情報。
  */
@@ -182,11 +178,47 @@ struct HistoryAction
     int targetSlot = -1;                 /**< ターゲットスロット */
 };
 
-static std::vector<HistoryAction> g_historyActions;
+namespace
+{
+    /**
+     * @brief 分岐の辺（あるノードから出る1つの行動選択）。
+     */
+    struct BranchEdge
+    {
+        HistoryAction action;  /**< 実行された行動 */
+        int childNode = -1;    /**< 行動適用後の状態ノードID */
+        std::string text;      /**< Action Log 行テキスト（累積時刻付き） */
+        std::string shortText; /**< Branch パネル行テキスト（累積時刻なし） */
+    };
 
-// 現在表示している状態のインデックス。
+    /**
+     * @brief 分岐木のノード。子行動は作成順で保持する。
+     */
+    struct HistoryNode
+    {
+        HistorySnapshot snapshot;         /**< その時点の盤面スナップショット */
+        std::vector<BranchEdge> children; /**< 出る子行動の列（作成順） */
+    };
+}
+
+// 履歴管理（分岐木）。ノードID = g_historyNodes の添字。ノード0 = バトル開始時の状態。
+static std::vector<HistoryNode> g_historyNodes;
+
+// Action Log / Branch パネルの表示対象ライン（ルートから葉までのノードID列）。
+// 分岐への遷移（Branch パネル行クリック／新分岐作成／別分岐の子行動と一致する行動の実行）で
+// 現在位置から先が新たな分岐へ組み替えられ、その先の分岐点では最も古く作成された
+// 子行動（作成順の先頭）で延長される。Undo/Redo・Action Log の行クリックはこのラインに沿って移動する。
+static std::vector<int> g_displayPath;
+
+// 現在表示している状態のインデックス（g_displayPath 上の位置）。
 // 0 = 初期状態
 static int g_historyIndex = 0;
+
+// 描画用の行キャッシュ（復元・進行・分岐切替時に dirty になり遅延再構築）
+static std::vector<HistoryLineRow> g_lineRows;
+static std::vector<HistoryBranchRow> g_branchRows;
+static bool g_lineRowsDirty = true;
+static bool g_branchRowsDirty = true;
 
 namespace
 {
@@ -275,8 +307,9 @@ namespace
  * @param actorSlot Actorのスロット番号。
  * @param targetTeam 対象のチーム。
  * @param targetSlot 対象のスロット番号。
+ * @return 行動ログ行テキスト（TLが空の場合は空文字列）。
  */
-static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot);
+static std::string proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot);
 
 /**
  * @brief 現在のチーム状態への参照を取得します。
@@ -328,11 +361,157 @@ const std::vector<TimelineNode>& getTimeline()
 }
 
 /**
- * @brief 行動履歴を取得します。
+ * @brief 表示中のライン（Action Log の表示対象経路）に沿った行一覧を取得します。
+ * @details 行 i は「経路上のノード i から出る行動」に対応する。
+ *          遷移元ノードに複数の子行動がある行には branch が立つ（"+" 表示用）。
+ * @return 行情報配列へのconst参照。
  */
-const std::vector<std::string>& getActionLog()
+const std::vector<HistoryLineRow>& getHistoryLineRows()
 {
-    return g_actionLog;
+    if (g_lineRowsDirty)
+    {
+        g_lineRows.clear();
+        if (g_displayPath.size() >= 1)
+        {
+            g_lineRows.reserve(g_displayPath.size() - 1);
+        }
+        for (std::size_t i = 0; i + 1 < g_displayPath.size(); ++i)
+        {
+            const int parentNodeId = g_displayPath[i];
+            const int childNodeId = g_displayPath[i + 1];
+            const std::vector<BranchEdge>& edges =
+                g_historyNodes[parentNodeId].children;
+            for (const BranchEdge& edge : edges)
+            {
+                if (edge.childNode != childNodeId)
+                {
+                    continue;
+                }
+                HistoryLineRow row;
+                row.text = edge.text;
+                row.branch = (edges.size() > 1);
+                g_lineRows.push_back(std::move(row));
+                break;
+            }
+        }
+        g_lineRowsDirty = false;
+    }
+    return g_lineRows;
+}
+
+/**
+ * @brief 現在位置ノードから出ている子行動（Branch パネルの行）一覧を取得します。
+ * @details 並びは作成順。現在の表示ラインが通る子行動には selected が立つ。
+ * @return 行情報配列へのconst参照。
+ */
+const std::vector<HistoryBranchRow>& getHistoryBranchRows()
+{
+    if (g_branchRowsDirty)
+    {
+        g_branchRows.clear();
+        if (g_historyIndex >= 0 &&
+            g_historyIndex < static_cast<int>(g_displayPath.size()))
+        {
+            const int positionNodeId = g_displayPath[g_historyIndex];
+            const std::vector<BranchEdge>& edges =
+                g_historyNodes[positionNodeId].children;
+            // 分岐が確定していない（子行動が1つ以下の）ノードは行を表示しない
+            if (edges.size() >= 2)
+            {
+                for (const BranchEdge& edge : edges)
+                {
+                    HistoryBranchRow row;
+                    row.text = edge.shortText;
+                    row.selected =
+                        (g_historyIndex + 1 < static_cast<int>(g_displayPath.size()) &&
+                         edge.childNode == g_displayPath[g_historyIndex + 1]);
+                    g_branchRows.push_back(std::move(row));
+                }
+            }
+        }
+        g_branchRowsDirty = false;
+    }
+    return g_branchRows;
+}
+
+/**
+ * @brief 指定ノード以降の表示ラインを、最も古く作成された子行動（作成順の先頭）で延長します。
+ * @param nodeId 延長起点のノードID（すでに g_displayPath に積まれている前提）。
+ */
+static void extendDisplayPathFromNode(int nodeId)
+{
+    while (true)
+    {
+        const std::vector<BranchEdge>& childEdges =
+            g_historyNodes[nodeId].children;
+        if (childEdges.empty())
+        {
+            break;
+        }
+        nodeId = childEdges.front().childNode;
+        g_displayPath.push_back(nodeId);
+    }
+}
+
+/**
+ * @brief 指定ノードのスナップショット内容を現在の状態へ復元します。
+ * @param nodeId 復元先ノードID。
+ */
+static void restoreNodeState(int nodeId)
+{
+    const HistorySnapshot& snap = g_historyNodes[nodeId].snapshot;
+
+    // チーム状態とタイムラインを保存時点へ戻す
+    g_teamState = snap.teamState;
+    g_timeline = snap.timeline;
+
+    // Actor を復元
+    g_actorTeam = snap.actorTeam;
+    g_actorSlot = snap.actorSlot;
+
+    // ターゲット選択状態を復元
+    g_selectedTargetTeam = snap.selectedTargetTeam;
+    g_selectedTargetSlot = snap.selectedTargetSlot;
+
+    // 累積時刻を復元
+    g_accumTime = snap.accumTime;
+
+    // 選択した行動を復元
+    g_currentSkillType = snap.currentSkillType;
+}
+
+/**
+ * @brief Branch パネルで表示された子行動を選択します（行クリック時）。
+ * @details 選択した子行動の適用後ノードへ盤面を復元し、Action Log の表示ラインも
+ *          その分岐へ切り替える。表示先の更なる分岐点は作成順の最古の子で延長する。
+ * @param row 子行動の作成順インデックス。
+ */
+void selectHistoryBranch(int row)
+{
+    if (g_historyIndex < 0 ||
+        g_historyIndex >= static_cast<int>(g_displayPath.size()))
+    {
+        return;
+    }
+    const int positionNodeId = g_displayPath[g_historyIndex];
+    const std::vector<BranchEdge>& edges =
+        g_historyNodes[positionNodeId].children;
+    if (row < 0 || row >= static_cast<int>(edges.size()))
+    {
+        return;
+    }
+
+    const int childNodeId = edges[row].childNode;
+
+    // 表示ラインを現在位置まで切り、選択した分岐へ組み替える
+    g_displayPath.resize(g_historyIndex + 1);
+    g_displayPath.push_back(childNodeId);
+    extendDisplayPathFromNode(childNodeId);
+
+    restoreNodeState(childNodeId);
+    g_historyIndex += 1;
+    g_lineRowsDirty = true;
+    g_branchRowsDirty = true;
 }
 
 /**
@@ -351,14 +530,16 @@ int getActorSlot() { return g_actorSlot; }
 float getAccumTime() { return g_accumTime; }
 
 /**
- * @brief 現在の履歴インデックスを取得します。
+ * @brief 表示中のライン上の現在位置インデックスを取得します。
+ * @return 履歴インデックス（0 = 初期状態）。
  */
 int getHistoryIndex() { return g_historyIndex; }
 
 /**
- * @brief 保存されている履歴総数を取得します。
+ * @brief 表示中のラインのノード総数を取得します。
+ * @return ライン上のノード数（行数 + 1）。
  */
-int getHistoryCount() { return static_cast<int>(g_historySequence.size()); }
+int getHistoryCount() { return static_cast<int>(g_displayPath.size()); }
 
 /**
  * @brief 現在選択されているスキル種別を取得します。
@@ -512,55 +693,41 @@ static float resolveUnitAV(const TeamState& state, int team, int slotIndex)
 }
 
 /**
- * @brief 現在の状態をスナップショットとして履歴に保存します。
+ * @brief 現在の状態をスナップショットとして新しいノードを履歴に追加します。
+ * @return 作成したノードのID。
  */
-static void captureSnapshot()
+static int createSnapshotNode()
 {
-    HistorySnapshot snap;
-    snap.teamState = g_teamState;
-    snap.timeline = g_timeline;
-    snap.actorTeam = g_actorTeam;
-    snap.actorSlot = g_actorSlot;
-    snap.selectedTargetTeam = g_selectedTargetTeam;
-    snap.selectedTargetSlot = g_selectedTargetSlot;
-    snap.accumTime = g_accumTime;
-	snap.currentSkillType = g_currentSkillType;
-    g_historySequence.push_back(std::move(snap));
+    HistoryNode node;
+    node.snapshot.teamState = g_teamState;
+    node.snapshot.timeline = g_timeline;
+    node.snapshot.actorTeam = g_actorTeam;
+    node.snapshot.actorSlot = g_actorSlot;
+    node.snapshot.selectedTargetTeam = g_selectedTargetTeam;
+    node.snapshot.selectedTargetSlot = g_selectedTargetSlot;
+    node.snapshot.accumTime = g_accumTime;
+	node.snapshot.currentSkillType = g_currentSkillType;
+    g_historyNodes.push_back(std::move(node));
+    return static_cast<int>(g_historyNodes.size()) - 1;
 }
 
 /**
- * @brief 指定された履歴のインデックスにおける盤面を復元します。
+ * @brief 指定された表示ライン上の位置における盤面を復元します。
  */
 void restoreHistoryStep(int index)
 {
     if (index < 0 ||
-        index >= static_cast<int>(g_historySequence.size()))
+        index >= static_cast<int>(g_displayPath.size()))
     {
         return;
     }
 
-    const HistorySnapshot& snap = g_historySequence[index];
-
-    // チーム状態とタイムラインを保存時点へ戻す
-    g_teamState = snap.teamState;
-    g_timeline = snap.timeline;
-
-    // Actor を復元
-    g_actorTeam = snap.actorTeam;
-    g_actorSlot = snap.actorSlot;
-
-    // ターゲット選択状態を復元
-    g_selectedTargetTeam = snap.selectedTargetTeam;
-    g_selectedTargetSlot = snap.selectedTargetSlot;
-
-    // 累積時刻を復元
-    g_accumTime = snap.accumTime;
-	
-	// 選択した行動を復元
-	g_currentSkillType = snap.currentSkillType;
+    restoreNodeState(g_displayPath[index]);
 
     // 現在表示している状態のインデックス
     g_historyIndex = index;
+    g_lineRowsDirty = true;
+    g_branchRowsDirty = true;
 }
 
 /**
@@ -621,7 +788,6 @@ void initTimeline()
     g_timeline.clear();
     // 追加行動を考慮した確保
     g_timeline.reserve(16);
-    g_actionLog.clear();
     g_actorTeam = -1;
     g_actorSlot = -1;
     g_selectedTargetTeam = -1;
@@ -668,11 +834,14 @@ void initTimeline()
         g_actorTeam = g_timeline[0].team;
         g_actorSlot = g_timeline[0].slotIndex;
     }
-    // 履歴を初期化 — 初期状態のスナップショットを保存
-    g_historySequence.clear();
-	g_historyActions.clear();
+    // 履歴を初期化 — 分岐木と表示ラインをクリアし、初期状態をルートに保存
+    g_historyNodes.clear();
+    g_displayPath.clear();
+    const int rootNodeId = createSnapshotNode();
+    g_displayPath.push_back(rootNodeId);
     g_historyIndex = 0;
-    captureSnapshot();
+    g_lineRowsDirty = true;
+    g_branchRowsDirty = true;
 }
 
 /**
@@ -694,7 +863,7 @@ void backupTurn()
 void forwardTurn()
 {
     const int lastIndex =
-        static_cast<int>(g_historySequence.size()) - 1;
+        static_cast<int>(g_displayPath.size()) - 1;
 
     if (g_historyIndex >= lastIndex)
     {
@@ -706,6 +875,12 @@ void forwardTurn()
 
 /**
  * @brief スキル実行およびターゲット選択を伴い、履歴を記録・分岐してターンを進めます。
+ * @details 既存の子行動と同じ行動を選んだ場合はそのノードへ復元して再生する
+ *          （表示ライン上の子ならそのまま進み、別分岐の子なら Branch 行クリックと
+ *          同じ動作で表示ラインを切り替える）。どの子行動とも一致しない場合は
+ *          新しく行動を実行して分岐木にノードを追加する。現在位置ノードに既に
+ *          子行動がある場合は新分岐の作成となり、Action Log の表示ラインも
+ *          新分岐へ切り替わる。
  */
 void proceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
 {
@@ -728,50 +903,67 @@ void proceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
     {
         return;
     }
-
-    // -------------------------------------------------------
-    // 次の行動が履歴に存在し、ターゲットも一致する場合
-    // 保存済みの状態を再生する
-    // -------------------------------------------------------
-
-    if (g_historyIndex < static_cast<int>(g_historyActions.size()))
+    if (g_historyIndex < 0 ||
+        g_historyIndex >= static_cast<int>(g_displayPath.size()))
     {
-        const HistoryAction& nextAction =
-            g_historyActions[g_historyIndex];
+        return;
+    }
 
-        if (nextAction.skillType == skillType &&
-            nextAction.targetTeam == targetTeam &&
-            nextAction.targetSlot == targetSlot)
+    const int positionNodeId = g_displayPath[g_historyIndex];
+
+    // -------------------------------------------------------
+    // 既存の子行動と同じ行動を選んだ場合:
+    // 表示ライン上の子ならそのまま進み、別分岐の子なら
+    // Branch 行クリックと同じ動作（盤面復元＋表示切替）を行う
+    // -------------------------------------------------------
+    {
+        const std::vector<BranchEdge>& edges =
+            g_historyNodes[positionNodeId].children;
+        for (std::size_t i = 0; i < edges.size(); ++i)
         {
-            restoreHistoryStep(g_historyIndex + 1);
-            return;
+            const BranchEdge& edge = edges[i];
+            if (edge.action.skillType == skillType &&
+                edge.action.targetTeam == targetTeam &&
+                edge.action.targetSlot == targetSlot)
+            {
+                if (g_historyIndex + 1 < static_cast<int>(g_displayPath.size()) &&
+                    edge.childNode == g_displayPath[g_historyIndex + 1])
+                {
+                    restoreHistoryStep(g_historyIndex + 1);
+                }
+                else
+                {
+                    selectHistoryBranch(static_cast<int>(i));
+                }
+                return;
+            }
         }
     }
 
     // -------------------------------------------------------
-    // 過去の状態から別のターゲットを選んだ場合
-    // その時点より未来の履歴を破棄する
-    // -------------------------------------------------------
-
-    if (g_historyIndex + 1 <
-        static_cast<int>(g_historySequence.size()))
-    {
-        // 現在の状態まで残す
-        g_historySequence.resize(g_historyIndex + 1);
-
-        // 現在の状態までに実行した行動だけ残す
-        g_historyActions.resize(g_historyIndex);
-        g_actionLog.resize(g_historyIndex);
-    }
-
-    // -------------------------------------------------------
-    // 新しい行動を実行する
+    // 既存のどの子行動とも一致しない → 新しく実行する
     // -------------------------------------------------------
 
     g_selectedTargetTeam = targetTeam;
     g_selectedTargetSlot = targetSlot;
 
-    proceedTurn(
+    // 行動テキスト用のスロット位置表記。
+    // proceedTurn 内で Actor が死亡した場合 g_actorTeam/g_actorSlot が
+    // 更新されうるため、実行前に作成する。
+    char actorSlotStr[16], targetSlotStr[16];
+    if (g_actorTeam == 1) {
+        std::snprintf(actorSlotStr, sizeof(actorSlotStr), "A%d", g_actorSlot + 1);
+    } else {
+        std::snprintf(actorSlotStr, sizeof(actorSlotStr), "E%d", g_actorSlot + 1);
+    }
+    if (targetTeam == 1) {
+        std::snprintf(targetSlotStr, sizeof(targetSlotStr), "A%d", targetSlot + 1);
+    } else {
+        std::snprintf(targetSlotStr, sizeof(targetSlotStr), "E%d", targetSlot + 1);
+    }
+    const char* skillTypeName = (skillType == SkillType::BS) ? "BS" : "BA";
+
+    const std::string actionText = proceedTurn(
         skillType,
         g_actorTeam,
         g_actorSlot,
@@ -779,27 +971,52 @@ void proceedTurnWithHistory(SkillType skillType, int targetTeam, int targetSlot)
         targetSlot
     );
 
-    // この行動で選択されたターゲットを保存
-    g_historyActions.push_back({
-        skillType,
-        targetTeam,
-        targetSlot
-    });
+    // 行動適用後の状態を新しいノードとして保存
+    const int newNodeId = createSnapshotNode();
 
-    // ターンを進行させた後の状態を保存
-    captureSnapshot();
+    BranchEdge edge;
+    edge.action.skillType = skillType;
+    edge.action.targetTeam = targetTeam;
+    edge.action.targetSlot = targetSlot;
+    edge.childNode = newNodeId;
+    edge.text = actionText;
+    char shortText[32];
+    std::snprintf(shortText, sizeof(shortText), "%s%s, %s",
+                  actorSlotStr, targetSlotStr, skillTypeName);
+    edge.shortText = shortText;
+
+    // createSnapshotNode の push_back で参照が無効化しうるため取り直す
+    HistoryNode& parentNode = g_historyNodes[positionNodeId];
+    const bool hadChildren = !parentNode.children.empty();
+    parentNode.children.push_back(std::move(edge));
+
+    if (hadChildren)
+    {
+        // 分岐の作成: 表示ラインを現在位置まで切り、新分岐へ切り替える。
+        // 新ノードは子を持たないためラインの終端は新ノード。
+        g_displayPath.resize(g_historyIndex + 1);
+        g_displayPath.push_back(newNodeId);
+    }
+    else
+    {
+        // 表示ラインの延長
+        g_displayPath.insert(
+            g_displayPath.begin() + (g_historyIndex + 1), newNodeId);
+    }
 
     // 最新の状態へ移動
-    g_historyIndex =
-        static_cast<int>(g_historySequence.size()) - 1;
+    g_historyIndex += 1;
+    g_lineRowsDirty = true;
+    g_branchRowsDirty = true;
 }
 
 /**
  * @brief ターンを1回分進行させ、スキル実行・AV更新・ログ記録を行います。
+ * @return 行動ログ行テキスト（TLが空の場合は空文字列）。
  */
-static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot)
+static std::string proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int targetTeam, int targetSlot)
 {
-    if (g_timeline.empty()) return;
+    if (g_timeline.empty()) return std::string();
 
     UnitStatDetails& actor = (actorTeam == 1)
         ? g_teamState.ally[actorSlot]
@@ -934,7 +1151,7 @@ static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
     // 表示用時刻は小数第3位以下を切り捨てる。
     const float truncatedTime = std::floor(g_accumTime * 100.0f) / 100.0f;
     std::snprintf(logEntry, sizeof(logEntry), "%s%s, %s (t = %.2f)", actorSlotStr, targetSlotStr, skillTypeName, truncatedTime);
-    g_actionLog.push_back(logEntry);
+    std::string actionLogText(logEntry);
 
     // 次の Actor を決定する。
     // Process 実行中の死亡処理・行動順/SPD効果は AV と Priority を更新するため、
@@ -954,4 +1171,6 @@ static void proceedTurn(SkillType skillType, int actorTeam, int actorSlot, int t
     // ターゲット選択をリセット
     g_selectedTargetTeam = -1;
     g_selectedTargetSlot = -1;
+
+    return actionLogText;
 }

@@ -94,10 +94,45 @@ void setSimulationTeamStateLogic(const TeamState& state);
 const std::vector<TimelineNode>& getTimeline();
 
 /**
- * @brief アクションログ一覧を取得します。
- * @return ログ文字列配列へのconst参照。
+ * @brief Action Log の表示ライン上の1行の情報。
  */
-const std::vector<std::string>& getActionLog();
+struct HistoryLineRow
+{
+    std::string text;    /**< 行テキスト（例: "A2E3, BS (t = 12.34)"） */
+    bool branch = false; /**< 遷移元ノードに複数の子行動が存在する（分岐あり） */
+};
+
+/**
+ * @brief Branch パネルに表示する1行の情報。
+ */
+struct HistoryBranchRow
+{
+    std::string text;     /**< 行テキスト（例: "A2E3, BS"。累積時刻は含まない） */
+    bool selected = false;/**< 現在の表示ラインが通る子行動か */
+};
+
+/**
+ * @brief 表示中のライン（Action Log の表示対象経路）に沿った行一覧を取得します。
+ * @details 行 i は「経路上のノード i から出る行動」に対応する。
+ * @return 行情報配列へのconst参照。
+ */
+const std::vector<HistoryLineRow>& getHistoryLineRows();
+
+/**
+ * @brief 現在位置ノードから出ている子行動（Branch パネルの行）一覧を取得します。
+ * @details 並びは作成順。現在の表示ラインが通る子行動には selected が立つ。
+ *          子行動が1つ以下のノード（分岐未確定）では空を返す。
+ * @return 行情報配列へのconst参照。
+ */
+const std::vector<HistoryBranchRow>& getHistoryBranchRows();
+
+/**
+ * @brief Branch パネルで表示された子行動を選択します（行クリック時）。
+ * @details 選択した子行動の適用後ノードへ盤面を復元し、Action Log の表示ラインも
+ *          その分岐へ切り替える（表示先の更なる分岐点は作成順の最古の子で延長）。
+ * @param row 子行動の作成順インデックス。
+ */
+void selectHistoryBranch(int row);
 
 /**
  * @brief 現在のActorのチームを取得します。
@@ -162,14 +197,14 @@ void shiftAVByActionOrder(UnitStatDetails& unit, float rate, std::uint32_t prior
 std::uint32_t nextTurnOrderPriority(TeamState& team);
 
 /**
- * @brief 現在の履歴インデックスを取得します。
- * @return 履歴インデックス。
+ * @brief 表示中のライン上の現在位置インデックスを取得します。
+ * @return 履歴インデックス（0 = 初期状態）。
  */
 int getHistoryIndex();
 
 /**
- * @brief 保存されている履歴総数を取得します。
- * @return 履歴数。
+ * @brief 表示中のラインのノード総数を取得します。
+ * @return ライン上のノード数（Action Log 行数 + 1）。
  */
 int getHistoryCount();
 
@@ -208,13 +243,15 @@ void backupTurn();
 void forwardTurn();
 
 /**
- * @brief 指定したインデックスの履歴ステップへ復元します。
- * @param index 復元する履歴インデックス。
+ * @brief 表示ライン上の指定位置の履歴ステップへ復元します。
+ * @param index 復元する表示ライン上の位置（0 = 初期状態）。
  */
 void restoreHistoryStep(int index);
 
 /**
  * @brief スキル実行およびターゲット選択を伴い、履歴を記録・分岐してターンを進めます。
+ * @details 既存の子行動と同じ行動なら再生し、一致しない行動なら新分岐を作成する
+ *          （過去の履歴は破棄しない）。
  * @param skillType 実行するスキル種別。
  * @param targetTeam 対象チーム（0 = enemy, 1 = ally）。
  * @param targetSlot 対象スロットインデックス（0～4）。

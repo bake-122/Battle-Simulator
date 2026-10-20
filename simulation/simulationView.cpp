@@ -105,6 +105,7 @@ static bool dragging_horizontal = false;
 
 static float g_actionLogScrollY = 0.0f;
 static int g_lastAutoScrollHistoryIndex = -1;
+static float g_branchPanelScrollY = 0.0f;
 
 /**
  * @brief UI側の初期化ラッパー関数。
@@ -114,6 +115,7 @@ void setSimulationTeamState(const TeamState& state)
     setSimulationTeamStateLogic(state);
     g_actionLogScrollY = 0.0f;
     g_lastAutoScrollHistoryIndex = -1;
+    g_branchPanelScrollY = 0.0f;
 }
 
 
@@ -1036,6 +1038,9 @@ SceneType renderSimulationScene()
         ImGuiWindowFlags_NoBackground
     );
 
+    // domain2 子ウィンドウの基準座標（actionLog_panel / branch_panel の配置に使用）
+    const ImVec2 domain2_screen_pos = ImGui::GetCursorScreenPos();
+
     // -------------------------------------------------------
     // actionLog_panel: domain2 左側の角丸白矩形（av_panel と同様の固定座標）
     // x 座標のみ split_x から相対計算、y 座標・width・height は av_panel と同一
@@ -1045,9 +1050,6 @@ SceneType renderSimulationScene()
         constexpr float ACTION_LOG_PANEL_WIDTH   = 240.0f;
         constexpr float ACTION_LOG_PANEL_MARGIN  = 12.0f;
         constexpr float ACTION_LOG_PANEL_ROUNDING = 8.0f;
-
-        // domain2 のスクリーン座標を取得
-        const ImVec2 domain2_screen_pos = ImGui::GetCursorScreenPos();
 
         // x 座標は split_x からマージン、y 座標は av_panel と同じ固定値
         const ImVec2 panel_min(
@@ -1097,9 +1099,14 @@ SceneType renderSimulationScene()
 			constexpr float ACTION_LOG_ITEM_HEIGHT = 20.0f;
 			constexpr float ACTION_LOG_START_OFFSET = 52.0f;
 			constexpr float ACTION_LOG_TEXT_MARGIN_X = 14.0f;
+			// 分岐マーク "+" 用の左余白（全行で予約し、A2E1 等の列位置を揃える）
+			constexpr float ACTION_LOG_GUTTER_WIDTH = 14.0f;
+
+			const std::vector<HistoryLineRow>& line_rows =
+				getHistoryLineRows();
 
 			const int log_count =
-				static_cast<int>(getActionLog().size());
+				static_cast<int>(line_rows.size());
 
 			// -------------------------------------------------------
 			// actionLog_panel 内のログ表示領域
@@ -1320,11 +1327,13 @@ SceneType renderSimulationScene()
 						current_log_index <= first_visible_index
 					)
 					{
-						// 過去へ：選択行が先頭行に来たら1行分上へ移動し、2行目に戻す
+						// 過去へ：選択行を上から2行目に置く
+						// （分岐切替など1行を超える移動にも対応）
 						next_scroll_y =
 							std::max(
 								0.0f,
-								current_scroll_y - ACTION_LOG_ITEM_HEIGHT
+								static_cast<float>(current_log_index - 1) *
+									ACTION_LOG_ITEM_HEIGHT
 							);
 					}
 					else if (
@@ -1332,12 +1341,26 @@ SceneType renderSimulationScene()
 						current_log_index >= last_visible_index
 					)
 					{
-						// 未来へ：選択行が最終表示行に来たら1行分下へ移動し、下から2行目に戻す
-						next_scroll_y =
-							std::min(
-								max_scroll_y,
-								current_scroll_y + ACTION_LOG_ITEM_HEIGHT
+						// 未来へ：選択行を下から2行目に置く
+						// （分岐切替など1行を超える移動にも対応）
+						const int full_visible_rows =
+							std::max(
+								1,
+								static_cast<int>(
+									std::floor(
+										(scroll_region_height - 0.001f) /
+										ACTION_LOG_ITEM_HEIGHT
+									)
+								)
 							);
+
+						const float target_scroll_y =
+							static_cast<float>(
+								current_log_index + 1 - full_visible_rows
+							) * ACTION_LOG_ITEM_HEIGHT;
+
+						next_scroll_y =
+							std::clamp(target_scroll_y, 0.0f, max_scroll_y);
 					}
 				}
 			}
@@ -1385,7 +1408,7 @@ SceneType renderSimulationScene()
  					ImGui::GetCursorScreenPos();
 
  				const float log_row_x =
- 					child_screen_pos.x + ACTION_LOG_TEXT_MARGIN_X;
+ 					child_screen_pos.x + ACTION_LOG_GUTTER_WIDTH + ACTION_LOG_TEXT_MARGIN_X;
  				// 強調色の角丸半径（背景矩形の角丸より小さくする）
  				constexpr float HIGHLIGHT_ROUNDING = 4.0f;
 
@@ -1433,8 +1456,19 @@ SceneType renderSimulationScene()
  						log_draw_list->AddText(
  							ImVec2(log_row_x, text_y),
  							IM_COL32(0, 0, 0, 255),
- 							getActionLog()[i].c_str()
+ 							line_rows[i].text.c_str()
  						);
+
+
+						// 分岐マーク（遷移元ノードに複数の子行動がある行）
+						if (line_rows[i].branch)
+						{
+							log_draw_list->AddText(
+								ImVec2(child_screen_pos.x + 6.0f, text_y),
+								IM_COL32(0, 0, 0, 255),
+								"+"
+							);
+						}
  					}
 
  					// カーソル形状
@@ -1518,6 +1552,344 @@ SceneType renderSimulationScene()
  			ImGui::PopStyleVar(3);
 			}
 		}
+    }
+
+    // -------------------------------------------------------
+    // branch_panel: actionLog_panel 右側に描画する。
+    // 分岐（Branch）領域。現在位置ノードから出る子行動（分岐）一覧を作成順で表示し、
+    // 行クリックでその分岐の盤面へ復元すると同時に Action Log の表示ラインを切り替える。
+    // -------------------------------------------------------
+
+    {
+        // actionLog_panel と同一の寸法定数（このブロック内で再定義）
+        constexpr float ACTION_LOG_PANEL_WIDTH   = 240.0f;
+        constexpr float ACTION_LOG_PANEL_MARGIN  = 12.0f;
+
+        constexpr float BRANCH_PANEL_GAP = 12.0f;           // actionLog_panel 右端との間隔
+        constexpr float BRANCH_PANEL_RIGHT_MARGIN = 12.0f;  // domain2 右端との間隔
+        constexpr float BRANCH_PANEL_MIN_WIDTH = 96.0f;     // 描画に必要な最小幅
+        constexpr float BRANCH_PANEL_ROUNDING  = 8.0f;
+        constexpr float BRANCH_TEXT_MARGIN_TOP = 16.0f;
+
+        // panel の上下座標は av_panel / actionLog_panel と同一（既定分割位置基準）
+        const ImVec2 branch_panel_min(
+            domain2_screen_pos.x + ACTION_LOG_PANEL_MARGIN + ACTION_LOG_PANEL_WIDTH + BRANCH_PANEL_GAP,
+            domain2_screen_pos.y + ACTION_LOG_PANEL_MARGIN
+        );
+
+        // domain2 の右端（WindowBorderSize を除く）
+        const ImVec2 domain2_window_pos = ImGui::GetWindowPos();
+        const ImVec2 domain2_window_size = ImGui::GetWindowSize();
+        const float domain2_right_x =
+            domain2_window_pos.x + domain2_window_size.x - ImGui::GetStyle().WindowBorderSize;
+
+        const float branch_panel_right_x =
+            domain2_right_x - BRANCH_PANEL_RIGHT_MARGIN;
+
+        // domain2 の右端までに最小幅を確保できない場合は描画しない
+        if (branch_panel_right_x - branch_panel_min.x >= BRANCH_PANEL_MIN_WIDTH)
+        {
+            const ImVec2 branch_panel_max(
+                branch_panel_right_x,
+                domain2_screen_pos.y + DEFAULT_SPLIT_Y - ACTION_LOG_PANEL_MARGIN
+            );
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddRectFilled(
+                branch_panel_min,
+                branch_panel_max,
+                IM_COL32(245, 245, 245, 255),
+                BRANCH_PANEL_ROUNDING
+            );
+
+            // "Branch" テキスト: panel 上側中央寄せ、太字、黒色
+            {
+                const char* branch_text = "Branch";
+
+                ImGui::PushFont(g_font_bold);
+                ImVec2 text_size = ImGui::CalcTextSize(branch_text);
+                ImGui::PopFont();
+
+                const float text_x = branch_panel_min.x +
+                    ((branch_panel_max.x - branch_panel_min.x) - text_size.x) * 0.5f;
+                const float text_y = branch_panel_min.y + BRANCH_TEXT_MARGIN_TOP;
+
+                ImGui::PushFont(g_font_bold);
+                ImGui::SetCursorScreenPos(ImVec2(text_x, text_y));
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+                ImGui::TextUnformatted(branch_text);
+                ImGui::PopStyleColor();
+                ImGui::PopFont();
+            }
+
+
+            // -------------------------------------------------------
+            // Branch パネルの行表示（現在位置ノードから出る子行動一覧）
+            // -------------------------------------------------------
+
+            {
+                constexpr float BRANCH_ITEM_HEIGHT = 20.0f;
+                constexpr float BRANCH_START_OFFSET = 52.0f;
+                constexpr float BRANCH_TEXT_MARGIN_X = 14.0f;
+                constexpr float BRANCH_HIGHLIGHT_ROUNDING = 4.0f;
+
+                const std::vector<HistoryBranchRow>& branch_rows =
+                    getHistoryBranchRows();
+
+                const int branch_row_count =
+                    static_cast<int>(branch_rows.size());
+
+                const float content_top_y =
+                    branch_panel_min.y + BRANCH_START_OFFSET;
+
+                // domain2 自体の下端を越えないようにする
+                const float domain2_bottom_y =
+                    domain2_window_pos.y +
+                    domain2_window_size.y -
+                    ImGui::GetStyle().WindowBorderSize;
+
+                const float visible_bottom_y =
+                    std::min(branch_panel_max.y, domain2_bottom_y);
+
+                const float scroll_region_height =
+                    std::max(
+                        0.0f,
+                        visible_bottom_y - content_top_y
+                    );
+
+                const float panel_width =
+                    branch_panel_max.x - branch_panel_min.x;
+
+                if (branch_row_count > 0 && scroll_region_height > 1.0f)
+                {
+                    const float branch_content_height =
+                        static_cast<float>(branch_row_count) * BRANCH_ITEM_HEIGHT;
+
+                    const bool scrollbar_visible =
+                        branch_content_height > scroll_region_height + 0.5f;
+
+                    const float scrollbar_width =
+                        scrollbar_visible
+                            ? ImGui::GetStyle().ScrollbarSize
+                            : 0.0f;
+
+                    const float row_clickable_right =
+                        branch_panel_min.x + panel_width - scrollbar_width;
+
+                    const ImVec2 content_min(
+                        branch_panel_min.x,
+                        content_top_y
+                    );
+
+                    const ImVec2 mouse_pos =
+                        ImGui::GetIO().MousePos;
+
+                    // ---------------------------------------------------
+                    // マウスクリックによる分岐選択
+                    // スクロールバー領域はクリック判定から除外
+                    // ---------------------------------------------------
+
+                    if (
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                        mouse_pos.x >= content_min.x &&
+                        mouse_pos.x < row_clickable_right &&
+                        mouse_pos.y >= content_top_y &&
+                        mouse_pos.y < content_top_y + scroll_region_height
+                    )
+                    {
+                        const float row_content_y =
+                            mouse_pos.y - content_top_y + g_branchPanelScrollY;
+
+                        const int clicked_row_index =
+                            static_cast<int>(
+                                std::floor(row_content_y / BRANCH_ITEM_HEIGHT)
+                            );
+
+                        if (
+                            clicked_row_index >= 0 &&
+                            clicked_row_index < branch_row_count
+                        )
+                        {
+                            selectHistoryBranch(clicked_row_index);
+                        }
+                    }
+
+                    // ---------------------------------------------------
+                    // 行の描画（手動描画：角丸クリッピング対応）
+                    // ---------------------------------------------------
+
+                    ImGui::SetCursorScreenPos(content_min);
+
+                    ImGui::PushStyleVar(
+                        ImGuiStyleVar_WindowPadding,
+                        ImVec2(0.0f, 0.0f)
+                    );
+
+                    ImGui::PushStyleVar(
+                        ImGuiStyleVar_ItemSpacing,
+                        ImVec2(0.0f, 0.0f)
+                    );
+
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ScrollbarBg,
+                        IM_COL32(245, 245, 245, 255)
+                    );
+
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ScrollbarGrab,
+                        IM_COL32(220, 220, 220, 255)
+                    );
+
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ScrollbarGrabHovered,
+                        IM_COL32(200, 200, 200, 255)
+                    );
+
+                    ImGui::PushStyleColor(
+                        ImGuiCol_ScrollbarGrabActive,
+                        IM_COL32(180, 180, 180, 255)
+                    );
+
+                    ImGui::BeginChild(
+                        "BranchPanelScrollRegion",
+                        ImVec2(panel_width, scroll_region_height),
+                        false,
+                        ImGuiWindowFlags_NoBackground |
+                        ImGuiWindowFlags_NoSavedSettings
+                    );
+
+                    ImGui::PushStyleColor(
+                        ImGuiCol_Text,
+                        IM_COL32(0, 0, 0, 255)
+                    );
+
+                    const ImVec2 child_screen_pos =
+                        ImGui::GetCursorScreenPos();
+
+                    for (int i = 0; i < branch_row_count; ++i)
+                    {
+                        const bool selected = branch_rows[i].selected;
+
+                        const float row_y =
+                            child_screen_pos.y +
+                            i * BRANCH_ITEM_HEIGHT;
+
+                        const float row_bottom =
+                            row_y + BRANCH_ITEM_HEIGHT;
+
+                        // 選択中の分岐を強調（Action Log と同じ青）
+                        if (selected)
+                        {
+                            ImDrawList* branch_draw_list =
+                                ImGui::GetWindowDrawList();
+
+                            branch_draw_list->AddRectFilled(
+                                ImVec2(
+                                    child_screen_pos.x,
+                                    row_y
+                                ),
+                                ImVec2(
+                                    child_screen_pos.x + panel_width,
+                                    row_bottom
+                                ),
+                                IM_COL32(200, 230, 255, 255),
+                                BRANCH_HIGHLIGHT_ROUNDING
+                            );
+                        }
+
+                        // テキストを描画
+                        {
+                            const float text_y =
+                                row_y +
+                                (BRANCH_ITEM_HEIGHT - 14.0f) * 0.5f;
+
+                            ImDrawList* branch_draw_list =
+                                ImGui::GetWindowDrawList();
+
+                            branch_draw_list->AddText(
+                                ImVec2(
+                                    child_screen_pos.x + BRANCH_TEXT_MARGIN_X,
+                                    text_y
+                                ),
+                                IM_COL32(0, 0, 0, 255),
+                                branch_rows[i].text.c_str()
+                            );
+                        }
+
+                        // カーソル形状
+                        {
+                            const ImVec2 mouse_pos =
+                                ImGui::GetIO().MousePos;
+
+                            const bool hovered =
+                                mouse_pos.x >= child_screen_pos.x &&
+                                mouse_pos.x < row_clickable_right &&
+                                mouse_pos.y >= row_y &&
+                                mouse_pos.y < row_bottom;
+
+                            if (hovered)
+                            {
+                                ImGui::SetMouseCursor(
+                                    ImGuiMouseCursor_Arrow
+                                );
+                            }
+                        }
+
+                        // 行の領域を ImGui に登録し、カーソルを次の行へ進める
+                        ImGui::Dummy(
+                            ImVec2(panel_width, BRANCH_ITEM_HEIGHT)
+                        );
+                    }
+
+                    ImGui::PopStyleColor(1);
+
+                    // 現在の子ウィンドウの実スクロール位置を保存
+                    g_branchPanelScrollY = ImGui::GetScrollY();
+
+                    ImGui::EndChild();
+
+                    ImGui::PopStyleColor(4);
+                    ImGui::PopStyleVar(2);
+
+                    // ---------------------------------------------------
+                    // スクロールバーが panel の右下角を四角く見せないようにマスク
+                    // domain2 によって panel の下端が切られている場合はマスクしない
+                    // ---------------------------------------------------
+                    {
+                        if (domain2_bottom_y >= branch_panel_max.y)
+                        {
+                            constexpr float CORNER_MASK_STEP = 0.25f;
+                            const float radius = BRANCH_PANEL_ROUNDING * 1.25f;
+                            const ImVec2 corner_center(
+                                branch_panel_max.x - radius,
+                                branch_panel_max.y - radius
+                            );
+
+                            ImDrawList* foreground_draw_list =
+                                ImGui::GetForegroundDrawList();
+
+                            for (float y = branch_panel_max.y - radius; y < branch_panel_max.y; y += CORNER_MASK_STEP)
+                            {
+                                const float strip_bottom =
+                                    std::min(y + CORNER_MASK_STEP, branch_panel_max.y);
+                                const float sample_y = (y + strip_bottom) * 0.5f;
+                                const float dy = sample_y - corner_center.y;
+                                const float dx = std::sqrt(
+                                    std::max(0.0f, radius * radius - dy * dy)
+                                );
+                                const float rounded_edge_x = corner_center.x + dx;
+
+                                foreground_draw_list->AddRectFilled(
+                                    ImVec2(rounded_edge_x, y),
+                                    ImVec2(branch_panel_max.x + 1.0f, strip_bottom),
+                                    SIM_BACKGROUND_COLOR
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     ImGui::EndChild();
