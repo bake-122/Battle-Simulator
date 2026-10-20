@@ -731,7 +731,7 @@ SceneType renderSimulationScene()
         const ImU32 ba_selected_color = IM_COL32(200, 230, 255, 255);
         const ImU32 bs_selected_color = IM_COL32(238, 151, 58, 255);
         [[maybe_unused]] constexpr ImU32 sa_background_color = IM_COL32(220, 70, 70, 255);
-        const ImU32 disabled_text_color = IM_COL32(132, 132, 132, 255);
+        const ImU32 disabled_text_color = IM_COL32(145, 145, 145, 255);
 		const ImU32 disabled_background_color = IM_COL32(214, 214, 214, 255);
 
         // パネル全体を先に描画し、各帯をその内側に配置する。

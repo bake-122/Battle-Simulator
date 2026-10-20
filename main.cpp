@@ -335,6 +335,33 @@ int main()
 	formationView.initialize();
 	
 	SceneType current_scene = SceneType::Formation;
+	
+	
+	// =========================================================
+	// 変化のあったフレームのみ描画（Idle時は待機）
+	// =========================================================
+	// 描画しないとき OS Eventの到着を glfwWaitEventsTimeout() で待つ。
+	// 描画条件:
+	//	- OS Input Event (マウス移動/ボタン/キー/スクロール/フォーカス/IME etc.)
+	//	- 周期処理: マウスボタン押下中 (formation の長押しリピート(25Hz) 受け寄り用)、 InputText 点滅中
+	// 備考: View / Logic は io.DeltaTime 非依存のため、フレーム間隔が伸びても
+	//		Logic に影響しない。長押しリピートは ImGui::GetTime() 基準のため、
+	//		発火時刻は狂わない。
+	
+	static bool needs_redraw = true;					// 次に描画するか (起動直後は描く)
+	static bool ui_text_active = false;					// 直近描画フレームで InputText 等が Active か
+	static double last_draw_time = 0.0;					// 連続 Event 由来の描画暴走の抑止
+	constexpr double MIN_DRAW_INTERVAL = 1.0 / 60.0;	// 描画頻度上限 (s)
+	constexpr double IDLE_WATCHDOG = 1.0;				// 変化がないときの安全監視 (s)
+	constexpr double REPEAT_WAKE = 0.03;				// ボタン押下中の待ち時間 (リピート25Hz > 0.04s)
+	constexpr double TEXT_WAKE = 0.25;					// InputText 点滅用の待ち時間 (s)
+	
+	const auto anyMouseButtonHeld = [window]()
+	{
+		return glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ||
+			   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS ||
+			   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
+	};
 
 
 	// =========================================================
@@ -344,6 +371,44 @@ int main()
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
+		
+		if (glfwGetWindowAttrib(window, GLFW_ICONIFIED))
+		{
+			glfwWaitEvents();	 // 最小化時、元に戻るまで待機
+			needs_redraw = true; // 復帰時のフレーム描画
+			continue;
+		}
+		
+		// --------------- 待機 -----------------
+		if (!needs_redraw)
+		{
+			// 次の描画が必要になりうる時間まで待つ
+			const double scheduled = anyMouseButtonHeld()
+				? REPEAT_WAKE
+				: (ui_text_active
+					? TEXT_WAKE
+					: IDLE_WATCHDOG);
+			const double wait_begin = glfwGetTime();
+			glfwWaitEventsTimeout(scheduled);
+			const double waited = glfwGetTime() - wait_begin;
+			
+			// 予定より早く発生した ~> OS Event 由来 -> 描画候補
+			// Timeout 由来でも周期需要 (押下中 / 編集中) が残っていれば描画する
+			needs_redraw = (waited < scheduled - 0.002) ||
+							anyMouseButtonHeld() || ui_text_active;
+			continue;
+		}
+		
+		// --------------- 描画	-----------------
+		// 連続イベント時の描画上限 (1/60s 未満の間隔では待ってから描く)
+		const double since_last = glfwGetTime() - last_draw_time;
+		if (since_last < MIN_DRAW_INTERVAL)
+		{
+			glfwWaitEventsTimeout(MIN_DRAW_INTERVAL - since_last);
+			continue;	// needs_redraw は true のまま残す
+		}
+		needs_redraw = false;
+		last_draw_time = glfwGetTime();
 
 
 		// -----------------------------------------------------
@@ -368,9 +433,13 @@ int main()
 			break;
 		}
 		
-		if (current_scene != previous_scene) UpdateWindowTitle(window, current_scene);
-
-
+		if (current_scene != previous_scene)
+		{
+			UpdateWindowTitle(window, current_scene);
+			// シーン遷移はフレーム内の return 値で確定するため、新シーンは次フレームで描く
+			needs_redraw = true;
+		}
+		
 		// =====================================================
 		// ImGui Render
 		// =====================================================
@@ -415,6 +484,9 @@ int main()
 
 
 		glfwSwapBuffers(window);
+		
+		// 次の周期待ちのInstanceを記録 (InputText やドラッグ中のItemが存在するか)
+		ui_text_active = ImGui::IsAnyItemActive();
 	}
 
 
