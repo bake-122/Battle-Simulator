@@ -33,6 +33,11 @@ inline constexpr ProcessId DEBUG_PROCESS_BS_ID = 2;
 inline constexpr ProcessId DEBUG_PROCESS_SA_ID = 3;
 
 /**
+ * @brief アビリティ効果のデバッグProcess ID。
+ */
+inline constexpr ProcessId DEBUG_PROCESS_ABILITY_ID = 4;
+
+/**
  * @brief Processの定義構造体。
  */
 struct ProcessDefinition

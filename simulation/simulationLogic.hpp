@@ -26,6 +26,7 @@ struct UnitStatDetails
 	int maxHP = 0;			/**< 戦闘開始時の最大HP */
 	int atk = 0;			/**< 攻撃力 */
 	int def = 0;			/**< 防御力 */
+	int spdFixedBonus = 0;	/**< 加算固定値型SPD効果の合計値 */
 	int currentMP = 0;		/**< 現在MP */
 	int currentBP = 0;		/**< 現在BP */
 	
@@ -159,10 +160,9 @@ float getAccumTime();
 
 /**
  * @brief ユニットの現在のtotalSPDを計算します。
- * @details [現行: SPD効果の状態未実装] 基礎SPDのみを返す。
- *			原則2パス合成（加算的効果を基礎値へ適用順に反映し、続いて
- *			乗算的効果を合計値へ適用順に反映する。）でtotalSPDを計算し、
- *			最後に float へ変換する。状態エンジン実装時にこの関数を置換する。
+ * @details [現行: 加算固定値型のみ実装] 基礎SPDへBuffSPDFixedの合計値を返す。
+ *			乗算型SPD効果（SPD-）との2パス合成予定。
+ *			状態エンジン実装時にこの関数を置換する。
  */
 float calcTotalSPD(const UnitStatDetails& unit);
 

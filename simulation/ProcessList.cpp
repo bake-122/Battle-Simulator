@@ -20,6 +20,11 @@ namespace simulation_process_detail
     const DealDMGArgs debugSAArgs = {
         Element::Void, TargetRange::All, 1800, 10, 0, 0
     };
+    // バトル開始時アビリティ（デバッグ用。スピード+1）。
+    // 対象は自身、加算するSPD値は +1。
+    const BuffSPDFixedArgs debugAbilityArgs = {
+        TargetRange::Self, 1
+    };
 
     const EffectCall debugBAEffects[] = {
         { EffectType::DealDMG, &debugBAArgs }
@@ -30,11 +35,15 @@ namespace simulation_process_detail
     const EffectCall debugSAEffects[] = {
         { EffectType::DealDMG, &debugSAArgs }
     };
+    const EffectCall debugAbilityEffects[] = {
+        { EffectType::BuffSPDFixed, &debugAbilityArgs }
+    };
 
     const std::vector<ProcessDefinition> registry = {
         { DEBUG_PROCESS_BA_ID, debugBAEffects, 1 },
         { DEBUG_PROCESS_BS_ID, debugBSEffects, 1 },
-        { DEBUG_PROCESS_SA_ID, debugSAEffects, 1 }
+        { DEBUG_PROCESS_SA_ID, debugSAEffects, 1 },
+        { DEBUG_PROCESS_ABILITY_ID, debugAbilityEffects, 1 }
     };
 }
 

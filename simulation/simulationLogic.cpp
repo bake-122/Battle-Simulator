@@ -62,6 +62,55 @@ namespace
             : state->enemy[slot];
         return static_cast<float>(unit.def);
     }
+
+    /**
+     * @brief 対象キオクの加算固定値型SPD効果合計へのポインタを解決します。
+     * @param context チーム状態へのポインタ（TeamState*）。
+     * @param team チーム番号（0 = enemy, 1 = ally）。
+     * @param slot スロット番号（0～4）。
+     * @return 加算固定値型SPD効果の合計へのポインタ。不正時はnullptr。
+     */
+    int* resolveTargetSPDFixedBonus(void* context, int team, int slot)
+    {
+        if (context == nullptr || slot < 0 || slot >= 5 ||
+            (team != 0 && team != 1))
+        {
+            return nullptr;
+        }
+
+        auto* state = static_cast<TeamState*>(context);
+        return (team == 1)
+            ? &state->ally[slot].spdFixedBonus
+            : &state->enemy[slot].spdFixedBonus;
+    }
+
+    /**
+     * @brief 対象キオクのSPDが変化した時にAVおよびPriorityの更新を行います。
+     * @details 速度変化時は AV = (oldSpeed / newSpeed) * AV を float で行う。
+     *          totalSPD が変わらない再付与でもPriorityは更新される。上式が通っているかは不明だが、
+     *          効果の消去&再付与は否定されることと、誤差を生じ得ないことから再付与の場合スルーしている。
+     * @param context チーム状態へのポインタ（TeamState*）。
+     * @param team チーム番号（0 = enemy, 1 = ally）。
+     * @param slot スロット番号（0～4）。
+     * @param priority 発行済みのPriority番号。
+     */
+    void handleTargetSPDChanged(void* context, int team, int slot,
+                                 std::uint32_t priority)
+    {
+        if (context == nullptr || slot < 0 || slot >= 5 ||
+            (team != 0 && team != 1))
+        {
+            return;
+        }
+
+        auto* state = static_cast<TeamState*>(context);
+        UnitStatDetails& unit = (team == 1)
+            ? state->ally[slot]
+            : state->enemy[slot];
+
+        rescaleAVBySpeed(unit, calcTotalSPD(unit));
+        unit.turnPriority = priority;
+    }
 }
 
 // ===========================================================
@@ -70,15 +119,15 @@ namespace
 
 /**
  * @brief ユニットの現在のtotalSPDを計算します。
- * @details [現行: SPD効果の状態未実装] 基礎SPDのみを返す。
- *			原則2パス合成（加算的効果を基礎値へ適用順に反映し、続いて
- *			乗算的効果を合計値へ適用順に反映する。）でtotalSPDを計算し、
- *			最後に float へ変換する。状態エンジン実装時にこの関数を置換する。
+ * @details [現行: 加算固定値型のみ実装] 基礎SPDへBuffSPDFixedの合計値を返す。
+ *			乗算型SPD効果（SPD-）との2パス合成予定。
+ *			状態エンジン実装時にこの関数を置換する。
  */
 float calcTotalSPD(const UnitStatDetails& unit)
 {
-	// TODO: ここにSPD効果の処理を入れる
-    return static_cast<float>(unit.character.spd);
+	// TODO: 乗算型SPD効果と2パス合成を実装する。
+    int totalSPD = std::max(0, unit.character.spd + unit.spdFixedBonus);
+    return totalSPD;
 }
 
 /**
@@ -731,23 +780,34 @@ void restoreHistoryStep(int index)
 }
 
 /**
- * @brief バトル開始時のアビリティ効果を指定した順序で適用します（枠組み）。
+ * @brief バトル開始時のアビリティ効果を指定した順序で適用します。
  * @details 適用順序:
- *   1. チーム1（味方）→ チーム2（敵）の順。
+ *   1. 味方 → 敵 の順。
  *   2. チーム内はスロット順（Slot1 → 5）で1体ずつ。
- *   3. 同一ユニットのパッシブ内は battleStartPriority 降順
+ *   3. 同一ユニットのPassive効果は battleStartPriority 降順
  *     （効果値変化系 1 / その他 0。バフ効果量のため）。
  *   - 対象はタイムライン上のユニットのみ（戦闘不能・空スロットはスキップ）。
  *   - SPD系効果の適用1回につき nextTurnOrderPriority() を呼び出し、効果の
- *     対象にその時点でのPriority値を与える）。
- * 現状の実装内容は適用ループと接続点のみ。効果データ（アビリティの Effect列・
- * 対象範囲・battleStartPriority）の取得手段が未実装のため、適用処理そのものは
- * 状態エンジン実装時に下記 TODO へ接続する（現時点で挙動変化なし）。
+ *     対象にその時点でのPriority値を与える。
+ * 現在はデバッグ用アビリティ（スピード+1 / BuffSPDFixed / Range: Self）のみを
+ * 実行する。Effect列の取得と battleStartPriority 降順の stable sort、
+ * および複数Effectの連結は未実装（TODO）。
  * 初期整列は後続の sortTimeline() が担保する。
  */
 static void applyBattleStartAbility()
 {
-    // チーム1（味方）→ チーム2（敵）。チーム内はスロット順（Slot1 → 5）。
+	// スロットの有効性の判定
+    bool allySlotOccupied[5]{};
+    bool enemySlotOccupied[5]{};
+    for (int i = 0; i < 5; ++i)
+    {
+        allySlotOccupied[i] = (g_teamState.ally[i].character.id != 0 &&
+                               g_teamState.ally[i].hp > 0);
+        enemySlotOccupied[i] = (g_teamState.enemy[i].character.id != 0 &&
+                                g_teamState.enemy[i].hp > 0);
+    }
+
+    // チーム1（味方）→ チーム0（敵）。チーム内はスロット順（Slot1 → 5）。
     for (const int team : { 1, 0 })
     {
         for (int slotIndex = 0; slotIndex < 5; ++slotIndex)
@@ -757,16 +817,40 @@ static void applyBattleStartAbility()
                 : g_teamState.enemy[slotIndex];
             if (unit.character.id == 0 || unit.hp <= 0)
             {
-                continue; // 空スロットの場合スキップ
+                continue; // 空スロット・戦闘不能の場合スキップ
             }
 
-            // TODO(戦闘システム): unit の戦闘開始アビリティ効果に紐づく SPD効果列を
-            // battleStartPriority 降順 stable sort で取得し、1件ずつ適用する:
-            //   1) const std::uint32_t priority = nextTurnOrderPriority(g_teamState);
-            //   2) 行動順型: shiftAVByActionOrder(unit, rate, priority)
-            //      SPD統計型: rescaleAVBySpeed(unit, calcTotalSPD(unit))
-            //   3) relocateTimelineNode(team, slotIndex) で整列へ反映
-            // ゼロ変化（表示SPDが変わらない再付与）でも priority は発行・スタンプされる。
+            // 効果適用1回につき優先権を1度発行し、その値を効果の対象へ与える。
+            // SPDが変わらないSPD効果の再付与でもPriorityは発行・更新される。
+            const std::uint32_t priority = nextTurnOrderPriority(g_teamState);
+
+            EffectContext effectContext{};
+            effectContext.actorTeam = team;
+            effectContext.actorSlot = slotIndex;
+            effectContext.targetTeam = team;
+            effectContext.targetSlot = slotIndex;
+            effectContext.allySlotOccupied = allySlotOccupied;
+            effectContext.enemySlotOccupied = enemySlotOccupied;
+            effectContext.spdContext = &g_teamState;
+            effectContext.resolveTargetSPDFixedBonus = &resolveTargetSPDFixedBonus;
+            effectContext.onTargetSPDChanged = &handleTargetSPDChanged;
+            effectContext.turnPriority = priority;
+
+            // TODO(戦闘システム): unit の戦闘開始アビリティ効果に紐づく Effect列を
+            // battleStartPriority 降順 stable sort で取得し、1件ずつ適用する。
+            // 現在はデバッグ用アビリティ（スピード+1 / Increase_SPD_Fixed /
+            // Range Self）の1件のみを適用する。
+			
+			// [DEBUG]
+			// DEBUG_PROCESS_ABILITY_IDが実行されなかった場合、ログを出力する。
+            if (!ExecuteProcess(DEBUG_PROCESS_ABILITY_ID, effectContext))
+            {
+                std::printf("[Process] Debug Ability Process is not registered (ID=%u)\n",
+                            static_cast<unsigned int>(DEBUG_PROCESS_ABILITY_ID));
+            }
+
+            // AV・Priority の変化を整列へ反映する。
+            relocateTimelineNode(team, slotIndex);
         }
     }
 }

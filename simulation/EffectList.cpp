@@ -105,13 +105,61 @@ void InvokeDealDMG(const EffectContext& context, const void* arguments)
     }
 }
 
-namespace exedra_effect_detail
+/**
+ * @brief スピードの固定値加算（BuffSPDFixed）を実行します。
+ * @details 対象の加算固定値型SPD効果の合計へ amount を加算する。
+ * @param amount 加算するSPD値（固定値）。
+ * @param spdFixedBonus 対象の加算固定値型SPD効果の合計へのポインタ。
+ */
+void BuffSPDFixed(int amount, int* spdFixedBonus)
+{
+    if (spdFixedBonus == nullptr)
+    {
+        return;
+    }
+
+    *spdFixedBonus += amount;
+}
+
+/**
+ * @brief 整数値SPD加算のInvoker関数。
+ * @details 対象の加算固定値型SPD効果合計へ amount を加算し、SPD変化を通知する。
+ *          通知は「表示SPDが変わらない再付与」でも発生し、その場合でも
+ *          ターン優先権は発行される。
+ */
+void InvokeBuffSPDFixed(const EffectContext& context, const void* arguments)
+{
+    if (arguments == nullptr)
+    {
+        return;
+    }
+
+    const auto& args = *static_cast<const BuffSPDFixedArgs*>(arguments);
+
+    int* spdFixedBonus = (context.resolveTargetSPDFixedBonus != nullptr)
+        ? context.resolveTargetSPDFixedBonus(context.spdContext,
+                                             context.targetTeam,
+                                             context.targetSlot)
+        : nullptr;
+
+    BuffSPDFixed(args.amount, spdFixedBonus);
+
+    // 対象を解決できた場合、AV再計算とPriorityをEffect外のロジックへ通知する。
+    if (spdFixedBonus != nullptr && context.onTargetSPDChanged != nullptr)
+    {
+        context.onTargetSPDChanged(context.spdContext, context.targetTeam,
+                                   context.targetSlot, context.turnPriority);
+    }
+}
+
+namespace battle_effect_detail
 {
     // EffectTypeの値を添字として使用する静的登録表。
     // Effectを追加したらEffectTypeとこの表の両方を更新する。
     constexpr std::array<EffectDefinition,
         static_cast<std::size_t>(EffectType::Count)> registry{{
-            { &InvokeDealDMG }
+            { &InvokeDealDMG },
+            { &InvokeBuffSPDFixed }
         }};
 
     static_assert(registry.size() == static_cast<std::size_t>(EffectType::Count),
@@ -124,17 +172,43 @@ namespace exedra_effect_detail
 const EffectDefinition* GetEffectDefinition(EffectType type)
 {
     const std::size_t index = static_cast<std::size_t>(type);
-    if (index >= exedra_effect_detail::registry.size())
+    if (index >= battle_effect_detail::registry.size())
     {
         return nullptr;
     }
 
-    return &exedra_effect_detail::registry[index];
+    return &battle_effect_detail::registry[index];
 }
 
 namespace
 {
     constexpr int SLOT_COUNT = 5;
+
+    /**
+     * @brief Effect種別に対応する引数構造体から対象範囲を解決します。
+     * @details Effectごとに引数構造体の形が異なるため、種別ごとに読み分ける。
+     * @param type Effect種別。
+     * @param arguments Effectに対応する引数構造体ポインタ。
+     * @return 対象範囲。不正な種別や引数nullptrの場合はTargetRange::Single。
+     */
+    TargetRange ResolveEffectRange(EffectType type, const void* arguments)
+    {
+        if (arguments == nullptr)
+        {
+            return TargetRange::Single;
+        }
+
+        switch (type)
+        {
+        case EffectType::DealDMG:
+            return static_cast<const DealDMGArgs*>(arguments)->range;
+        case EffectType::BuffSPDFixed:
+            return static_cast<const BuffSPDFixedArgs*>(arguments)->range;
+        case EffectType::Count:
+        default:
+            return TargetRange::Single;
+        }
+    }
 
     /**
      * @brief 指定したスロットが占有されているか判定します。
@@ -210,9 +284,8 @@ void ExecuteEffect(const EffectCall& effect, const EffectContext& context)
         return;
     }
 
-    const auto& args = *static_cast<const DealDMGArgs*>(effect.arguments);
-
-    switch (args.range)
+    // 対象範囲はEffect種別ごとの引数構造体から解決する。
+    switch (ResolveEffectRange(effect.type, effect.arguments))
     {
     case TargetRange::Self:
         if (IsSlotOccupied(context, context.actorTeam, context.actorSlot))

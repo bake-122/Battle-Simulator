@@ -46,6 +46,15 @@ struct EffectContext
     float actorTotalAtk = 0.0f;                                      /**< アクターの総攻撃力 */
     float targetTotalDef = 0.0f;                                     /**< ターゲットの総防御力 */
     float (*resolveTargetDef)(void*, int, int) = nullptr;            /**< 対象スロットの総防御力を解決する関数ポインタ */
+
+    // ------------------------------------------------------------
+    // SPD 効果用
+    // ------------------------------------------------------------
+
+    void* spdContext = nullptr;                                      /**< SPD解決コールバック用のコンテキストポインタ */
+    int* (*resolveTargetSPDFixedBonus)(void*, int, int) = nullptr;  /**< 対象スロットの固定値加算型SPD効果合計へのポインタを解決する関数ポインタ */
+    void (*onTargetSPDChanged)(void*, int, int, std::uint32_t) = nullptr; /**< 対象SPD変化時のAV再計算・Priority更新を行うコールバック */
+    std::uint32_t turnPriority = 0;                                 /**< 発行済みのPriority値（対象へ更新） */
 };
 
 /**
@@ -55,10 +64,21 @@ struct DealDMGArgs
 {
     Element element = Element::None;  /**< 攻撃属性 */
     TargetRange range = TargetRange::Single; /**< 対象範囲 */
-    int dmg = 0;                      /**< メインターゲットへのダメージ倍率（パーミル単位、1000 = 100%） */
-    int bgd = 0;                      /**< メインターゲットへのBreak Gauge Damage */
-    int proximity_dmg = 0;            /**< 隣接ターゲットへのダメージ倍率（パーミル単位、1000 = 100%） */
-    int proximity_bgd = 0;            /**< 隣接ターゲットへのBreak Gauge Damage */
+    int dmg = 0;                      /**< メインターゲットへのダメージ倍率（パーミル単位） */
+    int bgd = 0;                      /**< メインターゲットへのブレイクゲージ削減量 */
+    int proximity_dmg = 0;            /**< 隣接ターゲットへのダメージ倍率（パーミル単位） */
+    int proximity_bgd = 0;            /**< 隣接ターゲットへのブレイクゲージ削減量 */
+};
+
+/**
+ * @brief BuffSPDFixed（スピード加算効果）用の引数データ。
+ * @details 固定値加算型のSPD効果。対象の加算型SPD効果合計へ
+ *          amount を加算する。
+ */
+struct BuffSPDFixedArgs
+{
+    TargetRange range = TargetRange::Self; /**< 対象範囲 */
+    int amount = 0;                        /**< 加算するSPD値（固定値） */
 };
 
 /**
@@ -67,7 +87,8 @@ struct DealDMGArgs
  */
 enum class EffectType : std::uint16_t
 {
-    DealDMG = 0, /**< ダメージ処理 */
+    DealDMG = 0,
+    BuffSPDFixed,
     Count        /**< Effect総数 */
 };
 
@@ -98,9 +119,9 @@ struct EffectCall
  * @param element 攻撃属性。
  * @param range 対象範囲。
  * @param dmg ダメージ倍率（パーミル）。
- * @param bgd ブレイクゲージダメージ。
- * @param proximity_dmg 隣接対象ダメージ倍率（パーミル）。
- * @param proximity_bgd 隣接対象ブレイクゲージダメージ。
+ * @param bgd ブレイクゲージ削減量。
+ * @param proximity_dmg 隣接へのダメージ倍率（パーミル）。
+ * @param proximity_bgd 隣接へのブレイクゲージ削減量。
  * @param targetTeam 対象チーム番号。
  * @param targetSlot 対象スロット番号。
  * @param targetHP 対象HPポインタ。
@@ -120,6 +141,23 @@ void DealDMG(Element element, TargetRange range, int dmg, int bgd = 0,
  * @param arguments DealDMGArgsポインタ。
  */
 void InvokeDealDMG(const EffectContext& context, const void* arguments);
+
+/**
+ * @brief スピードの固定値加算（BuffSPDFixed）を実行します。
+ * @details 対象の加算固定値型SPD効果の合計へ加算する。状態変更のみを担当し、
+ *          AV再計算・Priority更新などの適用後処理はInvoker側で行う。
+ * @param amount 加算するSPD値（固定値）。
+ * @param spdFixedBonus 対象の加算固定値型SPD効果の合計へのポインタ。
+ */
+void BuffSPDFixed(int amount, int* spdFixedBonus);
+
+/**
+ * @brief BuffSPDFixed のInvoker関数。
+ * @details EffectContextから引数を解決して、対象の加算固定値型SPDの合計へ加算する。
+ * @param context Effect実行コンテキスト。
+ * @param arguments BuffSPDFixedArgsポインタ。
+ */
+void InvokeBuffSPDFixed(const EffectContext& context, const void* arguments);
 
 /**
  * @brief EffectTypeに対応する定義情報を取得します。
