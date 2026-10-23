@@ -176,7 +176,7 @@ Actor決定の原則として、AVの小さいキオクが先に行動する。S
 
 0. TL、行動ログ、スキル選択等の各状態を初期値にリセットし、TLの容量を確保する。
 1. IDが有効(かつHP > 0)のスロットをTLに追加。
-2. 全てのスロットに対しそのAV を `10000.0f / SPD` で設定する(`setTurnAV`)。
+2. 全てのスロットに対しそのAV を InitAV に設定する(`setTurnAV`)。
 3. バトル開始時に発動するPassive効果を、味方→敵、スロット順に適用する(`applyBattleStartAbility`)。1回の適用につき、turnPriorityを1度発行する。各効果の適用直後に、SPD系効果であればAV更新(`rescaleAVBySpeed`)を行う。
 4. AV 昇順 → turnPriority 降順 → チーム順(味方が先行) → スロット順 に整列する(`compareTurnOrder`)。
 5. 先頭の最小AVを全ユニットから減算し、先頭をActorとする(`shiftNextTurn`)。
@@ -191,7 +191,7 @@ Actor の AV を `10000.0f / SPD` に戻し、AV値比較のみでTLに安定挿
 
 > [!NOTE]
 >
-> `setTurnAV`ではturnPriorityは更新されないであろうという仮定の下、このようなTLへの操作を行っている。担当する関数は`relocateTimelineNodeByAV`。
+> `setTurnAV`ではturnPriorityは更新されないという仮定の下、このようなTLへの操作を行っている。担当する関数は`relocateTimelineNodeByAV`。
 >
 > 現在は、行動によりAV値が変わりうる効果を発動した場合、AV更新の処理で対象のturnPriorityが更新されるという構成にしている。
 
