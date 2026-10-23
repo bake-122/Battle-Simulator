@@ -38,6 +38,25 @@ inline constexpr ProcessId DEBUG_PROCESS_SA_ID = 3;
 inline constexpr ProcessId DEBUG_PROCESS_ABILITY_ID = 4;
 
 /**
+ * @brief 割合型SPDアビリティ効果（スピード+10%）のデバッグProcess ID。
+ * @details 対象範囲 Self、割合 +10%（amount: 100）のEffectを1件含む。
+ */
+inline constexpr ProcessId DEBUG_PROCESS_ABILITY_RATIO_ID = 5;
+
+/**
+ * @brief 持続1ターンのSPDアビリティ効果（スピード+1）のデバッグProcess ID。
+ * @details 対象範囲 Self、加算量 +1、効果ターン数 1 のEffectを1件含む。
+ */
+inline constexpr ProcessId DEBUG_PROCESS_ABILITY_TIMED_ID = 6;
+
+/**
+ * @brief 対象指定つきの持続1ターンSPDアビリティ効果のデバッグProcess ID。
+ * @details 対象範囲 Single、加算量 +1、効果ターン数 1 のEffectを1件含む。
+ *          他ユニットへ効果を与える場合（自己付与ではない）に使用する。
+ */
+inline constexpr ProcessId DEBUG_PROCESS_ABILITY_TARGET_ID = 7;
+
+/**
  * @brief Processの定義構造体。
  */
 struct ProcessDefinition

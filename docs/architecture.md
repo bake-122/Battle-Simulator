@@ -1,5 +1,7 @@
 # Architecture
 
+- 更新: 2026-10-23
+
 ## 概要
 
 AI-Generated document
@@ -64,7 +66,7 @@ AI-Generated document
 
 | ファイル | 役割 |
 |---|---|
-| [main.cpp](../main.cpp) | GLFW、Dear ImGui、Font、画像管理の初期化と終了処理を行う。メインループで現在のシーンを更新・描画し、シーンが変わった場合はウィンドウタイトルを更新する。 |
+| [main.cpp](../main.cpp) | GLFW、Dear ImGui、Font、画像管理の初期化と終了処理を行う。メインループで現在のシーンを更新・描画し、シーンが変わった場合はウィンドウタイトルを更新する。 変化フレームのみ描画する方式を採用し、入力（クリック・キー）があったフレームは 1 フレーム追加描画して処理結果を画面に反映する。 |
 | [scene_type.hpp](../scene_type.hpp) | `SceneType::Formation` と `SceneType::Simulation` を定義する。 |
 | [window_config.h](../window_config.h) | ウィンドウ共通サイズ(1280×720) |
 | [unit_types.h](../unit_types.h) | `Element`、`Role`、`Stats`、`CharacterStats`、`Character` など、キオクとステータスに関する共有型を定義する。 |
@@ -83,12 +85,12 @@ AI-Generated document
 |---|---|
 | [simulation/simulationView.hpp](../simulation/simulationView.hpp) | シミュレーション画面の公開インターフェースを宣言する。チーム状態の受け渡し関数と画面描画関数を公開し、ロジック側の `TeamState` を参照する。 |
 | [simulation/simulationView.cpp](../simulation/simulationView.cpp) | 戦闘画面、タイムラインや行動ログの表示、画面レイアウト、操作 UI を実装する。 |
-| [simulation/simulationLogic.hpp](../simulation/simulationLogic.hpp) | `TeamState`、`UnitStatDetails`、`TimelineNode`、`SkillType` などの戦闘状態・インターフェースを宣言する。 |
-| [simulation/simulationLogic.cpp](../simulation/simulationLogic.cpp) | チーム状態、行動タイムライン、行動履歴、行動者と対象選定、ターン進行、および履歴Snapshotを管理する。現在はProcessを呼び出して行動を解決する。 |
-| [simulation/ProcessList.hpp](../simulation/ProcessList.hpp) | ProcessのID、定義や、Effect列、および検索・実行インターフェースを宣言する。 |
+| [simulation/simulationLogic.hpp](../simulation/simulationLogic.hpp) | `TeamState`、`UnitStatDetails`、`TimelineNode`、`SkillType` などの戦闘状態・インターフェースを宣言する。 `UnitStatDetails` は `spdEffects`（適用中の SPD 効果リスト）を持ち、`relocateTimelineNodeByAV`、`tickUnitSPDEffects`、`applyDebugProcess` を宣言する。 |
+| [simulation/simulationLogic.cpp](../simulation/simulationLogic.cpp) | チーム状態、行動タイムライン、行動履歴、行動者と対象選定、ターン進行、および履歴Snapshotを管理する。現在はProcessを呼び出して行動を解決する。 AV計算時の安定挿入（`relocateTimelineNodeByAV`）、SPD効果の持続ターン減算（`tickUnitSPDEffects`）、デバッグProcess適用（`applyDebugProcess`）を含む。 |
+| [simulation/ProcessList.hpp](../simulation/ProcessList.hpp) | ProcessのID、定義や、Effect列、および検索・実行インターフェースを宣言する。 デバッグ用 Process ID 1〜7 を定義。 |
 | [simulation/ProcessList.cpp](../simulation/ProcessList.cpp) | Process 定義の登録表と実行処理を実装する(デバッグ用としてBA/BS/SAのProcessが登録されている)。 |
-| [simulation/EffectList.hpp](../simulation/EffectList.hpp) | Effectの種類、対象範囲、実行コンテキスト、引数、ディスパッチ用インターフェースを定義する。 |
-| [simulation/EffectList.cpp](../simulation/EffectList.cpp) | Effectのディスパッチと、登録されているEffectの処理を実装する。 |
+| [simulation/EffectList.hpp](../simulation/EffectList.hpp) | Effectの種類、対象範囲、実行コンテキスト、引数、ディスパッチ用インターフェースを定義する。 `SPDEffect` / `SPDEffectList`、`BuffSPDFixed` / `BuffSPDRatio` の引数構造体を含む。 |
+| [simulation/EffectList.cpp](../simulation/EffectList.cpp) | Effectのディスパッチと、登録されているEffectの処理を実装する。 `BuffSPDFixed` / `BuffSPDRatio` の実装と Invoker を含む。 |
 
 ### 画像と外部リソース
 
@@ -130,6 +132,7 @@ main.cpp
  │       simulationLogic.cpp
  │          ├── ProcessList.cpp
  │          │      └── EffectList.cpp
+ │          ├── SPDEffect / SPDEffectList (SPD 効果)
  │          └── TeamState / Timeline / Action Log
  │
  └── ImageManager
@@ -160,9 +163,9 @@ main.cpp
 | 編成枠、キオク選択・交換・解除、パラメータ編集 | `formation/formationView.h`、`formation/formationView.cpp` |
 | キオクの基本情報や共有型 | `kioku_data.h`、`unit_types.h` |
 | 戦闘画面の表示、タイムラインやログの UI | `simulation/simulationView.hpp`、`simulation/simulationView.cpp` |
-| ターン進行、行動順、履歴、戦闘状態 | `simulation/simulationLogic.hpp`、`simulation/simulationLogic.cpp` |
+| ターン進行、行動順、履歴、戦闘状態、SPD 効果 | `simulation/simulationLogic.hpp`、`simulation/simulationLogic.cpp` |
 | 行動内容の組み立て・Process 登録 | `simulation/ProcessList.hpp`、`simulation/ProcessList.cpp` |
-| Effectの追加・Effect実行の引数 | `simulation/EffectList.hpp`、`simulation/EffectList.cpp` |
+| Effectの追加・Effect実行の引数・SPD 効果 | `simulation/EffectList.hpp`、`simulation/EffectList.cpp` |
 | キオク・属性・ロール画像 | `image_loader.hpp`、`image_loader.cpp`、該当する `embedded_images/` 配下 |
 | ウィンドウサイズ | `window_config.h` |
 | コンパイル対象やリンク設定 | `Makefile`、`CMakeLists.txt` (必要に応じて `unity.cpp`) |

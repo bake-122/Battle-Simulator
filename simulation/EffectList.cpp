@@ -107,25 +107,64 @@ void InvokeDealDMG(const EffectContext& context, const void* arguments)
 
 /**
  * @brief スピードの固定値加算（BuffSPDFixed）を実行します。
- * @details 対象の加算固定値型SPD効果の合計へ amount を加算する。
+ * @details 対象の適用中SPD効果リストへ固定値加算の効果インスタンスを追加する。
+ *          状態変更のみを担当し、AV再計算・Priority更新などの適用後処理は
+ *          Invoker側で行う。
  * @param amount 加算するSPD値（固定値）。
- * @param spdFixedBonus 対象の加算固定値型SPD効果の合計へのポインタ。
+ * @param turns 効果ターン数（-1 = 永続）。
+ * @param skipSelfEffectTurn 付与ターンの終了時だけ減算しない（自己付与時）。
+ * @param target 対象の適用中SPD効果リスト。
  */
-void BuffSPDFixed(int amount, int* spdFixedBonus)
+void BuffSPDFixed(int amount, int turns, bool skipSelfEffectTurn, SPDEffectList* target)
 {
-    if (spdFixedBonus == nullptr)
+    if (target == nullptr)
     {
         return;
     }
 
-    *spdFixedBonus += amount;
+    SPDEffect effect;
+    effect.kind = SPDEffectKind::Fixed;
+    effect.amount = static_cast<double>(amount);
+    // 効果ターン数が指定されない（-1以下）場合は永続として扱う。
+    effect.remainingTurns = (turns > 0) ? turns : -1;
+    effect.skipSelfEffectTurn = skipSelfEffectTurn && effect.remainingTurns > 0;
+
+    target->push_back(effect);
+}
+
+/**
+ * @brief スピードの割合加算（BuffSPDRatio）を実行します。
+ * @details 対象の適用中SPD効果リストへ割合加算の効果インスタンスを追加する。
+ *          状態変更のみを担当する（BuffSPDFixedと同一）。
+ * @param amount 基礎SPDに対する割合（Permill）。
+ * @param turns 効果ターン数（-1 = 永続）。
+ * @param skipSelfEffectTurn 付与ターンの終了時だけ減算しない（自己付与時）。
+ * @param target 対象の適用中SPD効果リスト。
+ */
+void BuffSPDRatio(int amount, int turns, bool skipSelfEffectTurn, SPDEffectList* target)
+{
+    if (target == nullptr)
+    {
+        return;
+    }
+
+    SPDEffect effect;
+    effect.kind = SPDEffectKind::Ratio;
+    effect.amount = static_cast<double>(amount);
+    // 効果ターン数が指定されない（-1以下）場合は永続（常時発動型）として扱う。
+    effect.remainingTurns = (turns > 0) ? turns : -1;
+    effect.skipSelfEffectTurn = skipSelfEffectTurn && effect.remainingTurns > 0;
+
+    target->push_back(effect);
 }
 
 /**
  * @brief 整数値SPD加算のInvoker関数。
  * @details 対象の加算固定値型SPD効果合計へ amount を加算し、SPD変化を通知する。
  *          通知は「表示SPDが変わらない再付与」でも発生し、その場合でも
- *          ターン優先権は発行される。
+ *          Priorityは発行される。
+ *          状態の加算はBuffSPDFixed関数へ委譲し、この関数は引数の解決と
+ *          適用後の通知だけを担当する。
  */
 void InvokeBuffSPDFixed(const EffectContext& context, const void* arguments)
 {
@@ -136,16 +175,58 @@ void InvokeBuffSPDFixed(const EffectContext& context, const void* arguments)
 
     const auto& args = *static_cast<const BuffSPDFixedArgs*>(arguments);
 
-    int* spdFixedBonus = (context.resolveTargetSPDFixedBonus != nullptr)
-        ? context.resolveTargetSPDFixedBonus(context.spdContext,
-                                             context.targetTeam,
-                                             context.targetSlot)
+    SPDEffectList* effects = (context.resolveTargetSPDEffects != nullptr)
+        ? context.resolveTargetSPDEffects(context.spdContext,
+                                          context.targetTeam,
+                                          context.targetSlot)
         : nullptr;
 
-    BuffSPDFixed(args.amount, spdFixedBonus);
+    // Self-Granted の場合は付与ターンの終了時だけ減算しない。
+    // ただし、Passive 効果では減算免除しない。
+    const bool self_granted = (context.actorTeam == context.targetTeam &&
+                                context.actorSlot == context.targetSlot);
+    const bool skip_self_effect_turn =
+        !args.isPassive && self_granted && args.turns > 0;
+
+    BuffSPDFixed(args.amount, args.turns, skip_self_effect_turn, effects);
 
     // 対象を解決できた場合、AV再計算とPriorityをEffect外のロジックへ通知する。
-    if (spdFixedBonus != nullptr && context.onTargetSPDChanged != nullptr)
+    if (effects != nullptr && context.onTargetSPDChanged != nullptr)
+    {
+        context.onTargetSPDChanged(context.spdContext, context.targetTeam,
+                                   context.targetSlot, context.turnPriority);
+    }
+}
+
+/**
+ * @brief 割合SPD加算のInvoker関数。
+ * @details 対象の基礎SPDへ割合を加算し、SPD変化を通知する。
+ *          通知は「表示SPDが変わらない再付与」でも発生し、その場合でも
+ *          Priorityは発行される。
+ */
+void InvokeBuffSPDRatio(const EffectContext& context, const void* arguments)
+{
+    if (arguments == nullptr)
+    {
+        return;
+    }
+
+    const auto& args = *static_cast<const BuffSPDRatioArgs*>(arguments);
+
+    SPDEffectList* effects = (context.resolveTargetSPDEffects != nullptr)
+        ? context.resolveTargetSPDEffects(context.spdContext,
+                                          context.targetTeam,
+                                          context.targetSlot)
+        : nullptr;
+
+    const bool self_granted = (context.actorTeam == context.targetTeam &&
+                                context.actorSlot == context.targetSlot);
+    const bool skip_self_effect_turn =
+        !args.isPassive && self_granted && args.turns > 0;
+
+    BuffSPDRatio(args.amount, args.turns, skip_self_effect_turn, effects);
+
+    if (effects != nullptr && context.onTargetSPDChanged != nullptr)
     {
         context.onTargetSPDChanged(context.spdContext, context.targetTeam,
                                    context.targetSlot, context.turnPriority);
@@ -159,7 +240,8 @@ namespace battle_effect_detail
     constexpr std::array<EffectDefinition,
         static_cast<std::size_t>(EffectType::Count)> registry{{
             { &InvokeDealDMG },
-            { &InvokeBuffSPDFixed }
+            { &InvokeBuffSPDFixed },
+            { &InvokeBuffSPDRatio }
         }};
 
     static_assert(registry.size() == static_cast<std::size_t>(EffectType::Count),
@@ -204,6 +286,8 @@ namespace
             return static_cast<const DealDMGArgs*>(arguments)->range;
         case EffectType::BuffSPDFixed:
             return static_cast<const BuffSPDFixedArgs*>(arguments)->range;
+        case EffectType::BuffSPDRatio:
+            return static_cast<const BuffSPDRatioArgs*>(arguments)->range;
         case EffectType::Count:
         default:
             return TargetRange::Single;

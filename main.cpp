@@ -487,6 +487,33 @@ int main()
 		
 		// 次の周期待ちのInstanceを記録 (InputText やドラッグ中のItemが存在するか)
 		ui_text_active = ImGui::IsAnyItemActive();
+
+		// -----------------------------------------------------
+		// 入力（クリック・キー）を処理したとき、1fだけ追加描画する
+		// -----------------------------------------------------
+		// 原因:
+		//   入力の処理はフレーム内の後段で行われるため、処理結果の描画が
+		//   次のフレームになることがある。
+		//   例: 編成画面のキオク選択は「スロット描画 → 選択Window描画」の順に
+		//       処理されるため、キオクの配置結果がスロットへ反映されるのは
+		//       次のフレーム。従来の変化描画方式では次のフレームが描画されず、
+		//       マウスを動かすまで画面に反映されなかった。
+		// 対策:
+		//   マウスのボタン操作（Clicked/Released）やキー入力のあったフレームだけ1f
+		//   追加描画する。
+		const bool input_handled =
+			ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+			ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+			ImGui::IsMouseClicked(ImGuiMouseButton_Middle) ||
+			ImGui::IsMouseReleased(ImGuiMouseButton_Left) ||
+			ImGui::IsMouseReleased(ImGuiMouseButton_Right) ||
+			ImGui::IsMouseReleased(ImGuiMouseButton_Middle) ||
+			ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+
+		if (input_handled)
+		{
+			needs_redraw = true;
+		}
 	}
 
 

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "../unit_types.h"
 
@@ -22,13 +23,45 @@ enum class TargetRange : std::uint8_t
     All         /**< 全体 */
 };
 
+// Temporary
+
+/**
+ * @brief SPD効果の種別。
+ * @details Fixed, RatioはbaseSPDに対する加算的効果として扱う
+ *          （乗算的効果・2パス合成は未実装）。
+ */
+enum class SPDEffectKind : std::uint8_t
+{
+    Fixed = 0, /**< BuffSPDFixed */
+    Ratio = 1  /**< BuffSPDRatio(Permill) */
+};
+
+/**
+ * @brief 1件のSPD効果（適用インスタンス）。
+ * @details 状態モデルの一つ。
+ *          残りターン数が -1 のものは常時発動型（永続）として扱う。
+ */
+struct SPDEffect
+{
+    SPDEffectKind kind = SPDEffectKind::Fixed; /**< 効果種別 */
+    int amount = 0;      /**< Fixed: 固定値 / Ratio: 基礎SPDに対するPermill */
+    int remainingTurns = -1;  /**< 残りターン数（-1 = 永続） */
+    bool skipSelfEffectTurn = false; /**< 付与ターンの終了時だけ減算しない（自己付与時） */
+    std::uint32_t sourceProcessId = 0; /**< 付与元のProcess ID（再付与判定用・未使用） */
+};
+
+/**
+ * @brief 適用中のSPD効果のリスト。
+ */
+using SPDEffectList = std::vector<SPDEffect>;
+
 /**
  * @brief Effect実行時のコンテキスト情報（Actor/Targetおよびコールバック）。
  */
 struct EffectContext
 {
-    int actorTeam = -1;                                              /**< アクターのチーム番号（0 = enemy, 1 = ally） */
-    int actorSlot = -1;                                              /**< アクターのスロットインデックス（0～4） */
+    int actorTeam = -1;                                              /**< Actorのチーム番号（0 = enemy, 1 = ally） */
+    int actorSlot = -1;                                              /**< Actorのスロットインデックス（0～4） */
     int targetTeam = -1;                                             /**< ターゲットのチーム番号（0 = enemy, 1 = ally） */
     int targetSlot = -1;                                             /**< ターゲットのスロットインデックス（0～4） */
 
@@ -42,8 +75,8 @@ struct EffectContext
 
     void (*onDamageApplied)(void*, int, int, bool*, bool*) = nullptr;/**< ダメージ適用直後に死亡判定・占有更新等を行うコールバック */
 
-    int actorBaseAtk = 0;                                            /**< アクターの基礎攻撃力 */
-    float actorTotalAtk = 0.0f;                                      /**< アクターの総攻撃力 */
+    int actorBaseAtk = 0;                                            /**< Actorの基礎攻撃力 */
+    float actorTotalAtk = 0.0f;                                      /**< Actorの総攻撃力 */
     float targetTotalDef = 0.0f;                                     /**< ターゲットの総防御力 */
     float (*resolveTargetDef)(void*, int, int) = nullptr;            /**< 対象スロットの総防御力を解決する関数ポインタ */
 
@@ -52,7 +85,7 @@ struct EffectContext
     // ------------------------------------------------------------
 
     void* spdContext = nullptr;                                      /**< SPD解決コールバック用のコンテキストポインタ */
-    int* (*resolveTargetSPDFixedBonus)(void*, int, int) = nullptr;  /**< 対象スロットの固定値加算型SPD効果合計へのポインタを解決する関数ポインタ */
+    SPDEffectList* (*resolveTargetSPDEffects)(void*, int, int) = nullptr; /**< 対象スロットの適用中SPD効果リストへのポインタを解決する関数ポインタ */
     void (*onTargetSPDChanged)(void*, int, int, std::uint32_t) = nullptr; /**< 対象SPD変化時のAV再計算・Priority更新を行うコールバック */
     std::uint32_t turnPriority = 0;                                 /**< 発行済みのPriority値（対象へ更新） */
 };
@@ -64,21 +97,36 @@ struct DealDMGArgs
 {
     Element element = Element::None;  /**< 攻撃属性 */
     TargetRange range = TargetRange::Single; /**< 対象範囲 */
-    int dmg = 0;                      /**< メインターゲットへのダメージ倍率（パーミル単位） */
+    int dmg = 0;                      /**< メインターゲットへのダメージ倍率（Permill） */
     int bgd = 0;                      /**< メインターゲットへのブレイクゲージ削減量 */
-    int proximity_dmg = 0;            /**< 隣接ターゲットへのダメージ倍率（パーミル単位） */
+    int proximity_dmg = 0;            /**< 隣接ターゲットへのダメージ倍率（Permill） */
     int proximity_bgd = 0;            /**< 隣接ターゲットへのブレイクゲージ削減量 */
 };
 
 /**
- * @brief BuffSPDFixed（スピード加算効果）用の引数データ。
+ * @brief BuffSPDFixed（スピード固定値加算効果）用の引数データ。
  * @details 固定値加算型のSPD効果。対象の加算型SPD効果合計へ
  *          amount を加算する。
  */
 struct BuffSPDFixedArgs
 {
     TargetRange range = TargetRange::Self; /**< 対象範囲 */
-    int amount = 0;                        /**< 加算するSPD値（固定値） */
+    double amount = 0.0;                   /**< 加算するSPD値（固定値） */
+    int turns = -1;                        /**< 効果ターン数（-1 = 永続） */
+    bool isPassive = false;                /**< Passive効果か（=バフ解除の対象か） */
+};
+
+/**
+ * @brief BuffSPDRatio（スピード割合加算効果）用の引数データ。
+ * @details 割合加算型のSPD効果。対象の基礎SPDへ
+ *          amount（Permill）を乗じた値を加算する。
+ */
+struct BuffSPDRatioArgs
+{
+    TargetRange range = TargetRange::Self; /**< 対象範囲 */
+    int amount = 0;                        /**< 基礎SPDに対する割合（Permill） */
+    int turns = -1;                        /**< 効果ターン数（-1 = 永続） */
+    bool isPassive = false;                /**< Passive効果か（=バフ解除の対象か） */
 };
 
 /**
@@ -89,6 +137,7 @@ enum class EffectType : std::uint16_t
 {
     DealDMG = 0,
     BuffSPDFixed,
+    BuffSPDRatio,
     Count        /**< Effect総数 */
 };
 
@@ -125,8 +174,8 @@ struct EffectCall
  * @param targetTeam 対象チーム番号。
  * @param targetSlot 対象スロット番号。
  * @param targetHP 対象HPポインタ。
- * @param actorBaseAtk アクター基礎攻撃力。
- * @param actorTotalAtk アクター総攻撃力。
+ * @param actorBaseAtk Actorの基礎攻撃力。
+ * @param actorTotalAtk Actorの総攻撃力。
  * @param targetTotalDef ターゲット総防御力。
  */
 void DealDMG(Element element, TargetRange range, int dmg, int bgd = 0,
@@ -144,12 +193,26 @@ void InvokeDealDMG(const EffectContext& context, const void* arguments);
 
 /**
  * @brief スピードの固定値加算（BuffSPDFixed）を実行します。
- * @details 対象の加算固定値型SPD効果の合計へ加算する。状態変更のみを担当し、
- *          AV再計算・Priority更新などの適用後処理はInvoker側で行う。
+ * @details 対象の適用中SPD効果リストへ固定値加算の効果インスタンスを追加する。
+ *          状態変更のみを担当し、AV再計算・Priority更新などの適用後処理は
+ *          Invoker側で行う。
  * @param amount 加算するSPD値（固定値）。
- * @param spdFixedBonus 対象の加算固定値型SPD効果の合計へのポインタ。
+ * @param turns 効果ターン数（-1 = 永続）。
+ * @param skipSelfEffectTurn 付与ターンの終了時だけ減算しない（自己付与時）。
+ * @param target 対象の適用中SPD効果リスト。
  */
-void BuffSPDFixed(int amount, int* spdFixedBonus);
+void BuffSPDFixed(int amount, int turns, bool skipSelfEffectTurn, SPDEffectList* target);
+
+/**
+ * @brief スピードの割合加算（BuffSPDRatio）を実行します。
+ * @details 対象の適用中SPD効果リストへ割合加算の効果インスタンスを追加する。
+ *          状態変更のみを担当する（BuffSPDFixedと同一）。
+ * @param amount 基礎SPDに対する割合（Permill）。
+ * @param turns 効果ターン数（-1 = 永続）。
+ * @param skipSelfEffectTurn 付与ターンの終了時だけ減算しない（自己付与時）。
+ * @param target 対象の適用中SPD効果リスト。
+ */
+void BuffSPDRatio(int amount, int turns, bool skipSelfEffectTurn, SPDEffectList* target);
 
 /**
  * @brief BuffSPDFixed のInvoker関数。
@@ -158,6 +221,14 @@ void BuffSPDFixed(int amount, int* spdFixedBonus);
  * @param arguments BuffSPDFixedArgsポインタ。
  */
 void InvokeBuffSPDFixed(const EffectContext& context, const void* arguments);
+
+/**
+ * @brief BuffSPDRatio のInvoker関数。
+ * @details EffectContextから引数を解決して、対象の基礎SPDへ割合を加算する。
+ * @param context Effect実行コンテキスト。
+ * @param arguments BuffSPDRatioArgsポインタ。
+ */
+void InvokeBuffSPDRatio(const EffectContext& context, const void* arguments);
 
 /**
  * @brief EffectTypeに対応する定義情報を取得します。

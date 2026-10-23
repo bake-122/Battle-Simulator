@@ -26,10 +26,11 @@ struct UnitStatDetails
 	int maxHP = 0;			/**< 戦闘開始時の最大HP */
 	int atk = 0;			/**< 攻撃力 */
 	int def = 0;			/**< 防御力 */
-	int spdFixedBonus = 0;	/**< 加算固定値型SPD効果の合計値 */
 	int currentMP = 0;		/**< 現在MP */
 	int currentBP = 0;		/**< 現在BP */
-	
+
+	SPDEffectList spdEffects{}; /**< 適用中のSPD効果リスト */
+
 	int MP = 0;				/**< 最大MP */
 	int BP = 0;				/**< 最大BP */
 
@@ -160,8 +161,11 @@ float getAccumTime();
 
 /**
  * @brief ユニットの現在のtotalSPDを計算します。
- * @details [現行: 加算固定値型のみ実装] 基礎SPDへBuffSPDFixedの合計値を返す。
- *			乗算型SPD効果（SPD-）との2パス合成予定。
+ * @details [現行: 加算型のみ実装] 基礎SPDへ、適用中のSPD効果を合成した値を返す。
+ *			固定値型（BuffSPDFixed）はそのまま加算し、割合型（BuffSPDRatio）は
+ *			基礎SPDに対する割合（Permill）を加算する。
+ *			合成は double で行い、最後に float へ変換する
+ *			（乗算型効果と2パス合成は未実装）。
  *			状態エンジン実装時にこの関数を置換する。
  */
 float calcTotalSPD(const UnitStatDetails& unit);
@@ -231,6 +235,22 @@ bool isSkillTypeSelectable(SkillType type);
  * @brief タイムラインの初期化および初期Actorの解決を行います。
  */
 void initTimeline();
+
+/**
+ * @brief デバッグ用: 指定Processの効果を指定ユニットへ適用します。
+ * @details テスト・動作確認用。EffectContext を組み立てて Process を実行する。
+ *          適用時に nextTurnOrderPriority() で優先権を発行し、SPD変化があれば
+ *          AV再スケールとタイムライン整列を行う。
+ * @param actorTeam 適用元（Actor）のチーム番号（0 = enemy, 1 = ally）。
+ * @param actorSlot 適用元（Actor）のスロット番号（0～4）。
+ * @param targetTeam 対象チーム番号（0 = enemy, 1 = ally）。
+ * @param targetSlot 対象スロット番号（0～4）。
+ * @param processId 適用するProcess ID。
+ * @return 適用に成功した場合true。
+ */
+bool applyDebugProcess(int actorTeam, int actorSlot,
+                        int targetTeam, int targetSlot,
+                        ProcessId processId);
 
 /**
  * @brief 履歴を1ステップ前に巻き戻します（Undo）。

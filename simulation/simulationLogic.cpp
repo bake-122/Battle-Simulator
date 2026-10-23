@@ -64,13 +64,13 @@ namespace
     }
 
     /**
-     * @brief 対象キオクの加算固定値型SPD効果合計へのポインタを解決します。
+     * @brief 対象キオクの適用中SPD効果リストへのポインタを解決します。
      * @param context チーム状態へのポインタ（TeamState*）。
      * @param team チーム番号（0 = enemy, 1 = ally）。
      * @param slot スロット番号（0～4）。
-     * @return 加算固定値型SPD効果の合計へのポインタ。不正時はnullptr。
+     * @return 適用中SPD効果リストへのポインタ。不正時はnullptr。
      */
-    int* resolveTargetSPDFixedBonus(void* context, int team, int slot)
+    SPDEffectList* resolveTargetSPDEffects(void* context, int team, int slot)
     {
         if (context == nullptr || slot < 0 || slot >= 5 ||
             (team != 0 && team != 1))
@@ -80,8 +80,8 @@ namespace
 
         auto* state = static_cast<TeamState*>(context);
         return (team == 1)
-            ? &state->ally[slot].spdFixedBonus
-            : &state->enemy[slot].spdFixedBonus;
+            ? &state->ally[slot].spdEffects
+            : &state->enemy[slot].spdEffects;
     }
 
     /**
@@ -119,15 +119,32 @@ namespace
 
 /**
  * @brief ユニットの現在のtotalSPDを計算します。
- * @details [現行: 加算固定値型のみ実装] 基礎SPDへBuffSPDFixedの合計値を返す。
- *			乗算型SPD効果（SPD-）との2パス合成予定。
+ * @details [現行: 加算型のみ実装] 基礎SPDへ、適用中のSPD効果を合成した値を返す。
+ *			固定値型（BuffSPDFixed）はそのまま加算し、割合型（BuffSPDRatio）は
+ *			基礎SPDに対する割合（Permill）を加算する。
+ *			合成は double で行い、最後に float へ変換する
+ *			（乗算型効果と2パス合成は未実装）。
  *			状態エンジン実装時にこの関数を置換する。
  */
 float calcTotalSPD(const UnitStatDetails& unit)
 {
-	// TODO: 乗算型SPD効果と2パス合成を実装する。
-    int totalSPD = std::max(0, unit.character.spd + unit.spdFixedBonus);
-    return totalSPD;
+	// TODO(戦闘システム): 乗算型SPD効果と2パス合成を実装する。
+    const double base_spd = static_cast<double>(unit.character.spd);
+	double total_spd = base_spd;
+
+    for (const SPDEffect& effect : unit.spdEffects)
+    {
+        if (effect.kind == SPDEffectKind::Fixed)
+        {
+            total_spd += static_cast<double>(effect.amount);
+        }
+        else
+        {
+            total_spd += base_spd * static_cast<double>(effect.amount / 1000.0);
+        }
+    }
+
+    return static_cast<float>(std::max(0.0, total_spd));
 }
 
 /**
@@ -713,12 +730,58 @@ static void relocateTimelineNode(int team, int slotIndex)
 }
 
 /**
+ * @brief AV計算時のノード配置（既存ノードの後方へ安定挿入）。
+ * @details AV計算（setTurnAV）の直後に呼ばれる。AV更新（rescaleAVBySpeed）とは異なり、
+ *          全体ソート（compareTurnOrder の 4 キー比較）を行わず、AV 値のみで
+ *          安定挿入する。
+ */
+static void relocateTimelineNodeByAV(int team, int slotIndex)
+{
+    int index = -1;
+    for (int i = 0; i < static_cast<int>(g_timeline.size()); ++i)
+    {
+        if (g_timeline[i].team == team && g_timeline[i].slotIndex == slotIndex)
+        {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+    {
+        return;
+    }
+
+    const TimelineNode node = g_timeline[index];
+    g_timeline.erase(g_timeline.begin() + index);
+
+    const float nodeAV = (team == 1)
+        ? g_teamState.ally[slotIndex].av
+        : g_teamState.enemy[slotIndex].av;
+
+    int insertPos = 0;
+    for (int i = 0; i < static_cast<int>(g_timeline.size()); ++i)
+    {
+        const float existingAV = (g_timeline[i].team == 1)
+            ? g_teamState.ally[g_timeline[i].slotIndex].av
+            : g_teamState.enemy[g_timeline[i].slotIndex].av;
+        if (existingAV > nodeAV)
+        {
+            insertPos = i;
+            break;
+        }
+        insertPos = i + 1;
+    }
+
+    g_timeline.insert(g_timeline.begin() + insertPos, node);
+}
+
+/**
  * @brief 先頭ユニットの AV を全ユニットから引きます。
  * @details AV = max(0, AV − minAV)。この関数は「行動終了後・次の行動開始前」のタイミングで
  *          呼ばれ、処理後、全体ソートで整列を取り直すようにしている。
  *          minAV 減算によって通常大小逆転は発生しないが、float の丸めにより異なる値が
- *          同じ値になることがある。 sortTimeline はこのようなノードに対し、4つの変数による
- *			整列に直す処理をとっているが、実機で同じ処理になっているかは不明。
+ *          同じ値になることがある。 sortTimeline はこのようなノードが発生しても
+ *			何の対処もしていないが、実機で同じ処理になっているかは不明。
  */
 static void shiftNextTurn(float minAV)
 {
@@ -729,7 +792,7 @@ static void shiftNextTurn(float minAV)
             : g_teamState.enemy[node.slotIndex];
         unit.av = std::max(0.0f, unit.av - minAV);
     }
-    sortTimeline();
+
 	g_accumTime += minAV;
 }
 
@@ -777,6 +840,131 @@ void restoreHistoryStep(int index)
     g_historyIndex = index;
     g_lineRowsDirty = true;
     g_branchRowsDirty = true;
+}
+
+/**
+ * @brief ユニットのSPD効果の残りターン数を減算し、ターン数が0になった効果を解除します。
+ * @details 保持者のターン終了時（onTurnEnd）に呼び出す。
+ *			remainingTurns > 0 の効果を1ずつ減算し、0 になった効果は解除する。
+ *          remainingTurns = -1（永続）の効果は減算しない。
+ *          自己付与効果は付与ターンの終了時には減算せず（skipSelfEffectTurn）、
+ *          次のターン終了時に減算する。効果が解除された場合はtotalSPDが変化しうるため、AVを更新し、
+ *          TLへ反映する。
+ * @param team チーム番号（0 = enemy, 1 = ally）。
+ * @param slot スロット番号（0～4）。
+ */
+static void tickUnitSPDEffects(int team, int slot)
+{
+    if (slot < 0 || slot >= 5 || (team != 0 && team != 1))
+    {
+        return;
+    }
+
+    UnitStatDetails& unit = (team == 1)
+        ? g_teamState.ally[slot]
+        : g_teamState.enemy[slot];
+
+    if (unit.spdEffects.empty())
+    {
+        return;
+    }
+
+    bool removed = false;
+    for (auto it = unit.spdEffects.begin(); it != unit.spdEffects.end(); )
+    {
+        if (it->remainingTurns < 0)
+        {
+            // 永続は減算しない。
+            ++it;
+            continue;
+        }
+
+        if (it->skipSelfEffectTurn)
+        {
+            // Self-Granted: 付与ターンの終了時には減算しない。
+            it->skipSelfEffectTurn = false;
+            ++it;
+            continue;
+        }
+
+        --it->remainingTurns;
+        if (it->remainingTurns <= 0)
+        {
+            // 残りターン数0: 効果を解除する。
+            it = unit.spdEffects.erase(it);
+            removed = true;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (!removed)
+    {
+        return;
+    }
+
+    // 総SPDが変化したのでAVを更新し、整列へ反映する。
+    rescaleAVBySpeed(unit, calcTotalSPD(unit));
+    relocateTimelineNode(team, slot);
+}
+
+/**
+ * @brief デバッグ用: 指定Processの効果を指定ユニットへ適用します。
+ * @details テスト・動作確認用。EffectContext を組み立てて Process を実行し、
+ *          適用時に nextTurnOrderPriority() で優先権を発行する。
+ *          SPD変化があれば AV再スケールとタイムライン整列を行う。
+ * @param actorTeam 適用元（Actor）のチーム番号（0 = enemy, 1 = ally）。
+ * @param actorSlot 適用元（Actor）のスロット番号（0～4）。
+ * @param targetTeam 対象チーム番号（0 = enemy, 1 = ally）。
+ * @param targetSlot 対象スロット番号（0～4）。
+ * @param processId 適用するProcess ID。
+ * @return 適用に成功した場合true。
+ */
+bool applyDebugProcess(int actorTeam, int actorSlot,
+                        int targetTeam, int targetSlot,
+                        ProcessId processId)
+{
+    if (actorSlot < 0 || actorSlot >= 5 ||
+        targetSlot < 0 || targetSlot >= 5 ||
+        (actorTeam != 0 && actorTeam != 1) ||
+        (targetTeam != 0 && targetTeam != 1))
+    {
+        return false;
+    }
+
+    bool allySlotOccupied[5]{};
+    bool enemySlotOccupied[5]{};
+    for (int i = 0; i < 5; ++i)
+    {
+        allySlotOccupied[i] = (g_teamState.ally[i].character.id != 0 &&
+                               g_teamState.ally[i].hp > 0);
+        enemySlotOccupied[i] = (g_teamState.enemy[i].character.id != 0 &&
+                                g_teamState.enemy[i].hp > 0);
+    }
+
+    const std::uint32_t priority = nextTurnOrderPriority(g_teamState);
+
+    EffectContext effectContext{};
+    effectContext.actorTeam = actorTeam;
+    effectContext.actorSlot = actorSlot;
+    effectContext.targetTeam = targetTeam;
+    effectContext.targetSlot = targetSlot;
+    effectContext.allySlotOccupied = allySlotOccupied;
+    effectContext.enemySlotOccupied = enemySlotOccupied;
+    effectContext.spdContext = &g_teamState;
+    effectContext.resolveTargetSPDEffects = &resolveTargetSPDEffects;
+    effectContext.onTargetSPDChanged = &handleTargetSPDChanged;
+    effectContext.turnPriority = priority;
+
+    if (!ExecuteProcess(processId, effectContext))
+    {
+        return false;
+    }
+
+    relocateTimelineNode(targetTeam, targetSlot);
+    return true;
 }
 
 /**
@@ -832,7 +1020,7 @@ static void applyBattleStartAbility()
             effectContext.allySlotOccupied = allySlotOccupied;
             effectContext.enemySlotOccupied = enemySlotOccupied;
             effectContext.spdContext = &g_teamState;
-            effectContext.resolveTargetSPDFixedBonus = &resolveTargetSPDFixedBonus;
+            effectContext.resolveTargetSPDEffects = &resolveTargetSPDEffects;
             effectContext.onTargetSPDChanged = &handleTargetSPDChanged;
             effectContext.turnPriority = priority;
 
@@ -1107,8 +1295,9 @@ static std::string proceedTurn(SkillType skillType, int actorTeam, int actorSlot
         : g_teamState.enemy[actorSlot];
 
     // 行動開始時の AV を計算し、TL に挿入する。
+    // setTurnAVでは全体ソートを行わず、既存ノードの後方へ安定挿入する。
     setTurnAV(actor);
-    relocateTimelineNode(actorTeam, actorSlot);
+    relocateTimelineNodeByAV(actorTeam, actorSlot);
 
     const char* actorName = actor.character.name;
 
@@ -1236,6 +1425,12 @@ static std::string proceedTurn(SkillType skillType, int actorTeam, int actorSlot
     const float truncatedTime = std::floor(g_accumTime * 100.0f) / 100.0f;
     std::snprintf(logEntry, sizeof(logEntry), "%s%s, %s (t = %.2f)", actorSlotStr, targetSlotStr, skillTypeName, truncatedTime);
     std::string actionLogText(logEntry);
+
+    // 行動終了時（onTurnEnd）: 保持者のSPD効果の残りターン数を
+    // 減算し、期限切れの効果を解除する。
+    // 解除された場合はtotalSPDが変化するため、AVの更新とTLへの反映は
+    // tickUnitSPDEffects 側で行う。
+    tickUnitSPDEffects(actorTeam, actorSlot);
 
     // 次の Actor を決定する。
     // Process 実行中の死亡処理・行動順/SPD効果は AV と Priority を更新するため、

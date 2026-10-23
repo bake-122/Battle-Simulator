@@ -1918,6 +1918,207 @@ SceneType renderSimulationScene()
         ImGuiWindowFlags_NoBackground
     );
 
+    // =======================================================
+    // domain3: ユニットステータス表示
+    //   ally を左側、enemy を右側に表示。
+    //   各陣営の背景に formationView と同様の陣営色の角丸矩形を描画。
+    //   (アイコン) ATK: X, DEF: Y, SPD: Z
+    //   アイコンは TL と同一サイズ (32px)。
+    //   X, Y, Z は totalATK, totalDEF, totalSPD（小数 4 桁）。
+    //   空スロット: 空スロットアイコンのみ。ATK/DEF/SPD は表示しない。
+    //   死亡ユニット: ATK/DEF/SPD を非表示、アイコンを暗くする (domain1 と同様)。
+    //   Actor: 緑の円周で強調。対象は強調しない。
+    //   配置は DEFAULT_SPLIT_Y 基準で split_y に影響しない。
+    // =======================================================
+    {
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImageManager& imageManager = ImageManager::GetInstance();
+
+        constexpr float ICON_SIZE = 32.0f;
+        constexpr float ROW_HEIGHT = ICON_SIZE + 4.0f;
+        constexpr float PANEL_MARGIN = 8.0f;
+        constexpr float PANEL_RADIUS = 10.0f;
+
+        constexpr ImU32 COLOR_ALLY_PANEL  = IM_COL32(51, 60, 73, 255);
+        constexpr ImU32 COLOR_ENEMY_PANEL = IM_COL32(122, 62, 70, 255);
+        constexpr ImU32 ACTOR_HIGHLIGHT_COLOR = IM_COL32(80, 220, 100, 255);
+
+        const float half_width = DOMAIN3_WIDTH * 0.5f;
+        const float panel_width = half_width - PANEL_MARGIN * 2.0f;
+
+        // Ally パネル (左側)
+        {
+            const float panel_left = PANEL_MARGIN;
+            const float panel_top = DEFAULT_SPLIT_Y + PANEL_MARGIN;
+            const float panel_bottom = static_cast<float>(WINDOW_HEIGHT) - PANEL_MARGIN;
+
+            draw_list->AddRectFilled(
+                ImVec2(panel_left, panel_top),
+                ImVec2(panel_left + panel_width, panel_bottom),
+                COLOR_ALLY_PANEL,
+                PANEL_RADIUS
+            );
+
+            float current_y = panel_top + PANEL_MARGIN;
+
+            for (int slot = 0; slot < SIM_SLOT_COUNT; ++slot)
+            {
+                const UnitStatDetails& unit = getSimulationTeamState().ally[slot];
+                const bool has_unit = (unit.character.id != 0);
+                const bool is_dead = has_unit && (unit.hp <= 0);
+                const bool is_actor = (getActorTeam() == 1 && getActorSlot() == slot);
+
+                const float icon_x = panel_left + PANEL_MARGIN;
+                const float icon_y = current_y;
+
+                if (has_unit)
+                {
+                    const GLuint unit_texture = imageManager.GetTexture(unit.character.id);
+                    if (unit_texture != 0)
+                    {
+                        const ImU32 portrait_tint = is_dead
+                            ? IM_COL32(165, 165, 165, 255)
+                            : IM_COL32(255, 255, 255, 255);
+                        draw_list->AddImage(
+                            (ImTextureID)(intptr_t)unit_texture,
+                            ImVec2(icon_x, icon_y),
+                            ImVec2(icon_x + ICON_SIZE, icon_y + ICON_SIZE),
+                            ImVec2(0.0f, 0.0f),
+                            ImVec2(1.0f, 1.0f),
+                            portrait_tint
+                        );
+                    }
+
+                    if (is_actor)
+                    {
+                        const float cx = icon_x + ICON_SIZE * 0.5f;
+                        const float cy = icon_y + ICON_SIZE * 0.5f;
+                        const float r = ICON_SIZE * 0.5f;
+                        draw_list->AddCircle(
+                            ImVec2(cx, cy), r,
+                            ACTOR_HIGHLIGHT_COLOR, 0, 1.5f
+                        );
+                    }
+
+                    if (!is_dead)
+                    {
+                        char text[128];
+                        std::snprintf(text, sizeof(text),
+                            "ATK: %.4f, DEF: %.4f, SPD: %.4f",
+                            static_cast<float>(unit.atk),
+                            static_cast<float>(unit.def),
+                            unit.totalSPD);
+                        const float text_x = icon_x + ICON_SIZE + 6.0f;
+                        const float text_y = icon_y + (ICON_SIZE - 14.0f) * 0.5f;
+                        draw_list->AddText(
+                            ImVec2(text_x, text_y),
+                            IM_COL32(255, 255, 255, 255),
+                            text
+                        );
+                    }
+                }
+                else
+                {
+                    const float cx = icon_x + ICON_SIZE * 0.5f;
+                    const float cy = icon_y + ICON_SIZE * 0.5f;
+                    const float r = ICON_SIZE * 0.5f - 2.0f;
+                    draw_list->AddCircle(
+                        ImVec2(cx, cy), r,
+                        IM_COL32(200, 200, 200, 255), 32, 2.0f
+                    );
+                }
+
+                current_y += ROW_HEIGHT;
+            }
+        }
+
+        // Enemy パネル (右側)
+        {
+            const float panel_left = half_width + PANEL_MARGIN;
+            const float panel_top = DEFAULT_SPLIT_Y + PANEL_MARGIN;
+            const float panel_bottom = static_cast<float>(WINDOW_HEIGHT) - PANEL_MARGIN;
+
+            draw_list->AddRectFilled(
+                ImVec2(panel_left, panel_top),
+                ImVec2(panel_left + panel_width, panel_bottom),
+                COLOR_ENEMY_PANEL,
+                PANEL_RADIUS
+            );
+
+            float current_y = panel_top + PANEL_MARGIN;
+
+            for (int slot = 0; slot < SIM_SLOT_COUNT; ++slot)
+            {
+                const UnitStatDetails& unit = getSimulationTeamState().enemy[slot];
+                const bool has_unit = (unit.character.id != 0);
+                const bool is_dead = has_unit && (unit.hp <= 0);
+                const bool is_actor = (getActorTeam() == 0 && getActorSlot() == slot);
+
+                const float icon_x = panel_left + PANEL_MARGIN;
+                const float icon_y = current_y;
+
+                if (has_unit)
+                {
+                    const GLuint unit_texture = imageManager.GetTexture(unit.character.id);
+                    if (unit_texture != 0)
+                    {
+                        const ImU32 portrait_tint = is_dead
+                            ? IM_COL32(165, 165, 165, 255)
+                            : IM_COL32(255, 255, 255, 255);
+                        draw_list->AddImage(
+                            (ImTextureID)(intptr_t)unit_texture,
+                            ImVec2(icon_x, icon_y),
+                            ImVec2(icon_x + ICON_SIZE, icon_y + ICON_SIZE),
+                            ImVec2(0.0f, 0.0f),
+                            ImVec2(1.0f, 1.0f),
+                            portrait_tint
+                        );
+                    }
+
+                    if (is_actor)
+                    {
+                        const float cx = icon_x + ICON_SIZE * 0.5f;
+                        const float cy = icon_y + ICON_SIZE * 0.5f;
+                        const float r = ICON_SIZE * 0.5f;
+                        draw_list->AddCircle(
+                            ImVec2(cx, cy), r,
+                            ACTOR_HIGHLIGHT_COLOR, 0, 1.5f
+                        );
+                    }
+
+                    if (!is_dead)
+                    {
+                        char text[128];
+                        std::snprintf(text, sizeof(text),
+                            "ATK: %.4f, DEF: %.4f, SPD: %.4f",
+                            static_cast<float>(unit.atk),
+                            static_cast<float>(unit.def),
+                            unit.totalSPD);
+                        const float text_x = icon_x + ICON_SIZE + 6.0f;
+                        const float text_y = icon_y + (ICON_SIZE - 14.0f) * 0.5f;
+                        draw_list->AddText(
+                            ImVec2(text_x, text_y),
+                            IM_COL32(255, 255, 255, 255),
+                            text
+                        );
+                    }
+                }
+                else
+                {
+                    const float cx = icon_x + ICON_SIZE * 0.5f;
+                    const float cy = icon_y + ICON_SIZE * 0.5f;
+                    const float r = ICON_SIZE * 0.5f - 2.0f;
+                    draw_list->AddCircle(
+                        ImVec2(cx, cy), r,
+                        IM_COL32(200, 200, 200, 255), 32, 2.0f
+                    );
+                }
+
+                current_y += ROW_HEIGHT;
+            }
+        }
+    }
+
     ImGui::EndChild();
 
 
