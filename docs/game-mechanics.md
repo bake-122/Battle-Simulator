@@ -152,7 +152,7 @@ $$
 
 **[現行実装]**
 
-`TeamState` は `ally[5]`, `enemy[5]` とSPを持つ(**TODO:** 現在の実装では、SPはバトル全体に対する共有財産として実装してしまっている。これを防ぐため、6番目の要素にそれぞれのSPを格納するのが自然か)。`UnitStatDetails` は `Character`、HP、最大HP、ATK、DEF、現在 MP、現在BP、魔力解放レベル(?)、AV を持つ。
+`TeamState` は `ally[5]`, `enemy[5]` と陣営別にSPを持つ。`UnitStatDetails` は `Character`、HP、最大HP、ATK、DEF、現在 MP、現在BP、有効なSPD効果リスト、最大MP、最大BP、AV、totalSPD、turnPriority を持つ。
 
 編成画面はParametersから HP / ATK / DEF を計算し、`TeamState` にキオク情報をコピーする。currentMPは0、AVは`10000 / SPD`で初期化する。戦闘ロジックは初期HPを`maxHP` にmoveして、タイムラインを構築する。空スロットの HP / maxHPは0。
 
