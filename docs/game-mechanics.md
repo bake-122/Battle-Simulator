@@ -270,7 +270,7 @@ AttackRatio=\min\left(\frac{TotalATK+10}{TotalDEF+10}\times0.12,\ 2.0\right)
 $$
 
 $$
-RawDamage=\frac{DamagePermille}{1000}\times BaseDMG\times AttackRatio
+RawDamage=\frac{dmg}{1000}\times BaseDMG\times AttackRatio
 $$
 
 $$
